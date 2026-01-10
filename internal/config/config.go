@@ -13,6 +13,7 @@ type Config struct {
 	MaxAIVideoDurationSec int     `json:"max_ai_video_duration_sec"`
 	FallbackClipDuration  int     `json:"fallback_clip_duration_sec"`
 	FallbackStartPercent  float64 `json:"fallback_start_percent"`
+	CookiesFile           string  `json:"cookies_file"`
 }
 
 func Load(path string) (*Config, error) {

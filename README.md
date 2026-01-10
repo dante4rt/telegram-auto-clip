@@ -4,13 +4,13 @@
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Telegram Bot](https://img.shields.io/badge/Telegram-Bot-26A5E4?logo=telegram)](https://core.telegram.org/bots)
 
-A Telegram bot that automatically creates viral-ready clips from YouTube videos using AI.
+A Telegram bot that creates viral-ready clips from YouTube videos using AI.
 
 ## Features
 
-- **Smart Segment Detection** - Uses YouTube heatmap data or Gemini AI to find the most engaging moments
-- **Dynamic Duration** - Clips are 15-60 seconds based on content type
-- **AI Captions** - Generates catchy captions in Bahasa Indonesia with relevant hashtags
+- **Smart Segment Detection** - Uses YouTube heatmap or Gemini AI to find engaging moments
+- **Dynamic Duration** - 15-60 second clips based on content type
+- **AI Captions** - Generates captions in Bahasa Indonesia with hashtags
 - **Concurrent Processing** - Handles multiple requests simultaneously
 
 ## Prerequisites
@@ -29,53 +29,22 @@ sudo apt install ffmpeg && pip install yt-dlp
 
 ## Quick Start
 
-1. Clone the repo
+1. **Clone & setup**
 
    ```bash
    git clone https://github.com/dante4rt/telegram-auto-clip.git
    cd telegram-auto-clip
-   ```
-
-2. Configure environment
-
-   ```bash
    cp .env.example .env
    ```
 
-   Edit `.env`:
+2. **Edit `.env`**
 
    ```text
-   TELEGRAM_BOT_TOKEN=your_token    # Get from @BotFather
-   GEMINI_API_KEY=your_key          # Get from aistudio.google.com/apikey
+   TELEGRAM_BOT_TOKEN=your_token    # From @BotFather
+   GEMINI_API_KEY=your_key          # From aistudio.google.com/apikey
    ```
 
-3. Configure (optional)
-
-   Edit `config.json`:
-
-   ```json
-   {
-     "poll_timeout_sec": 10,
-     "max_clip_duration_sec": 60,
-     "output_dir": "tmp",
-     "min_heatmap_score": 0.15,
-     "max_ai_video_duration_sec": 1200,
-     "fallback_clip_duration_sec": 45,
-     "fallback_start_percent": 0.2
-   }
-   ```
-
-   | Option | Description | Default |
-   | -------- | ------------- | --------- |
-   | `poll_timeout_sec` | Telegram polling interval | 10 |
-   | `max_clip_duration_sec` | Maximum clip length | 60 |
-   | `output_dir` | Temp files directory | tmp |
-   | `min_heatmap_score` | Minimum engagement score (0-1) | 0.15 |
-   | `max_ai_video_duration_sec` | Max video length for AI analysis | 1200 (20 min) |
-   | `fallback_clip_duration_sec` | Clip length when no best segment found | 45 |
-   | `fallback_start_percent` | Start position for long video fallback | 0.2 (20%) |
-
-4. Run
+3. **Run**
 
    ```bash
    go run main.go
@@ -83,35 +52,44 @@ sudo apt install ffmpeg && pip install yt-dlp
 
 ## Usage
 
-Send to your bot in Telegram:
-
 ```text
 /clip https://youtube.com/watch?v=VIDEO_ID
 ```
 
-The bot will:
+## Configuration
 
-1. Analyze the video to find the best moment
-2. Download and process the segment
-3. Generate an AI caption
-4. Send the clip back
+Edit `config.json` to customize (all optional):
+
+| Option                       | Description                          | Default |
+| ---------------------------- | ------------------------------------ | ------- |
+| `max_clip_duration_sec`      | Maximum clip length                  | 60      |
+| `min_heatmap_score`          | Minimum engagement score (0-1)       | 0.15    |
+| `max_ai_video_duration_sec`  | Max video length for AI analysis     | 1200    |
+| `fallback_clip_duration_sec` | Fallback clip length                 | 45      |
+| `fallback_start_percent`     | Start position for fallback          | 0.2     |
+| `cookies_file`               | Path to cookies.txt for YouTube auth | ""      |
+
+**For servers/VPS** getting "Sign in to confirm you're not a bot" errors:
+
+1. Install "Get cookies.txt LOCALLY" (Chrome) or "cookies.txt" (Firefox)
+2. Go to youtube.com while logged in
+3. Export cookies → Save as `cookies.txt`
+4. Set `"cookies_file": "cookies.txt"` in config.json
 
 ## Contributing
 
-Contributions are welcome! Feel free to:
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
+1. Fork the repo
+2. Create feature branch (`git checkout -b feature/amazing`)
+3. Commit changes (`git commit -m 'Add feature'`)
+4. Push (`git push origin feature/amazing`)
 5. Open a Pull Request
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT - see [LICENSE](LICENSE)
 
 ## Acknowledgments
 
-- [Gemini AI](https://ai.google.dev/) for video analysis and caption generation
-- [yt-dlp](https://github.com/yt-dlp/yt-dlp) for YouTube downloading
-- [telebot](https://github.com/tucnak/telebot) for Telegram bot framework
+- [Gemini AI](https://ai.google.dev/) - Video analysis & captions
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp) - YouTube downloading
+- [telebot](https://github.com/tucnak/telebot) - Telegram bot framework

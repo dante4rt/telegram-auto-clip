@@ -11,11 +11,12 @@ import (
 )
 
 type DownloadOptions struct {
-	URL        string
-	OutputDir  string
-	StartSec   float64
-	EndSec     float64
-	OutputFile string
+	URL         string
+	OutputDir   string
+	StartSec    float64
+	EndSec      float64
+	OutputFile  string
+	CookiesFile string
 }
 
 func DownloadSegment(opts DownloadOptions) (string, error) {
@@ -31,6 +32,11 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 		"-o", outputPath,
 		"--no-warnings",
 		"--no-playlist",
+	}
+
+	// Add cookies file if specified (needed for some videos on servers)
+	if opts.CookiesFile != "" {
+		args = append(args, "--cookies", opts.CookiesFile)
 	}
 
 	// Add time range if specified

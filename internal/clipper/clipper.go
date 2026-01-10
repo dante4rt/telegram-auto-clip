@@ -144,11 +144,12 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 	onStatus("Downloading...")
 	rawFile := fmt.Sprintf("raw_%s.mp4", requestID)
 	rawPath, err := youtube.DownloadSegment(youtube.DownloadOptions{
-		URL:        url,
-		OutputDir:  outDir,
-		StartSec:   startSec,
-		EndSec:     endSec,
-		OutputFile: rawFile,
+		URL:         url,
+		OutputDir:   outDir,
+		StartSec:    startSec,
+		EndSec:      endSec,
+		OutputFile:  rawFile,
+		CookiesFile: c.cfg.CookiesFile,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("download failed: %w", err)
