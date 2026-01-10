@@ -27,6 +27,10 @@ func FetchMetadata(url string) (*VideoMetadata, error) {
 
 	output, err := cmd.Output()
 	if err != nil {
+		// Get stderr for better error messages
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			return nil, fmt.Errorf("yt-dlp failed: %s", string(exitErr.Stderr))
+		}
 		return nil, fmt.Errorf("yt-dlp failed: %w", err)
 	}
 
