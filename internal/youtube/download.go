@@ -35,13 +35,13 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 		os.Remove(outputPath)
 
 		args := []string{
-			"-f", "bv*+ba/b",
-			"-S", "res:1080,ext:mp4",
+			"-f", "bv*[height>=480]+ba/bv*+ba/b",
+			"-S", "+res:1080,+br",
 			"--merge-output-format", "mp4",
 			"-o", outputPath,
-			"--no-warnings",
 			"--no-playlist",
 			"--extractor-args", "youtube:player_client=ios,web,android",
+			"--print", "%(height)sp %(format_id)s",
 		}
 		if proxyURL != "" {
 			args = append(args, "--proxy", proxyURL)
@@ -56,7 +56,8 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 		args = append(args, opts.URL)
 
 		cmd := exec.Command("yt-dlp", args...)
-		var stderr bytes.Buffer
+		var stdout, stderr bytes.Buffer
+		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 
 		if err := cmd.Run(); err != nil {
@@ -70,7 +71,9 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 			continue
 		}
 
-		logger.Info("Download completed successfully")
+		// Log the format that was downloaded
+		format := strings.TrimSpace(stdout.String())
+		logger.Info("Download completed: %s", format)
 		return outputPath, nil
 	}
 
