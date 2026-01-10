@@ -27,7 +27,7 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 	}
 
 	outputPath := filepath.Join(opts.OutputDir, opts.OutputFile)
-	clients := []string{"ios", "tv_embedded", "android"}
+	clients := []string{"web", "ios", "android"}
 
 	logger.Info("Downloading video segment: %.0f-%.0f seconds", opts.StartSec, opts.EndSec)
 

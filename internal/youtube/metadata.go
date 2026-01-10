@@ -18,7 +18,7 @@ type VideoMetadata struct {
 }
 
 func FetchMetadata(url string, cookiesFile string, proxies []string) (*VideoMetadata, error) {
-	clients := []string{"ios", "tv_embedded", "android"}
+	clients := []string{"web", "ios", "android"}
 
 	var lastErr error
 	for _, proxyURL := range proxies {
