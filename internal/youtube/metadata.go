@@ -18,35 +18,60 @@ type VideoMetadata struct {
 }
 
 func FetchMetadata(url string, cookiesFile string) (*VideoMetadata, error) {
-	args := []string{
-		"--dump-json",
-		"--skip-download",
-		"--no-warnings",
+	// Try multiple strategies in order
+	strategies := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "cookies",
+			args: func() []string {
+				args := []string{"--dump-json", "--skip-download", "--no-warnings"}
+				if cookiesFile != "" {
+					args = append(args, "--cookies", cookiesFile)
+				}
+				return args
+			}(),
+		},
+		{
+			name: "android",
+			args: []string{"--dump-json", "--skip-download", "--no-warnings", "--extractor-args", "youtube:player_client=android"},
+		},
+		{
+			name: "mweb",
+			args: []string{"--dump-json", "--skip-download", "--no-warnings", "--extractor-args", "youtube:player_client=mweb"},
+		},
 	}
 
-	if cookiesFile != "" {
-		args = append(args, "--cookies", cookiesFile)
-	}
+	var lastErr error
+	for _, strategy := range strategies {
+		args := append(strategy.args, url)
+		cmd := exec.Command("yt-dlp", args...)
 
-	args = append(args, url)
-
-	cmd := exec.Command("yt-dlp", args...)
-
-	output, err := cmd.Output()
-	if err != nil {
-		// Get stderr for better error messages
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			return nil, fmt.Errorf("yt-dlp failed: %s", string(exitErr.Stderr))
+		output, err := cmd.Output()
+		if err == nil {
+			var meta VideoMetadata
+			if err := json.Unmarshal(output, &meta); err != nil {
+				lastErr = fmt.Errorf("failed to parse metadata: %w", err)
+				continue
+			}
+			return &meta, nil
 		}
-		return nil, fmt.Errorf("yt-dlp failed: %w", err)
+
+		// Check if it's an auth error, try next strategy
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			stderr := string(exitErr.Stderr)
+			if strings.Contains(stderr, "Sign in") || strings.Contains(stderr, "bot") {
+				lastErr = fmt.Errorf("strategy %s failed: auth required", strategy.name)
+				continue
+			}
+			lastErr = fmt.Errorf("yt-dlp failed: %s", stderr)
+		} else {
+			lastErr = fmt.Errorf("yt-dlp failed: %w", err)
+		}
 	}
 
-	var meta VideoMetadata
-	if err := json.Unmarshal(output, &meta); err != nil {
-		return nil, fmt.Errorf("failed to parse metadata: %w", err)
-	}
-
-	return &meta, nil
+	return nil, lastErr
 }
 
 func FormatDuration(seconds float64) string {

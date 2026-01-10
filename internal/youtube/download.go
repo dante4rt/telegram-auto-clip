@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 
 	"telegram-auto-clip/internal/logger"
 )
@@ -26,7 +27,8 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 
 	outputPath := filepath.Join(opts.OutputDir, opts.OutputFile)
 
-	args := []string{
+	// Base args for all strategies
+	baseArgs := []string{
 		"-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
 		"--merge-output-format", "mp4",
 		"-o", outputPath,
@@ -34,33 +36,69 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 		"--no-playlist",
 	}
 
-	// Add cookies file if specified (needed for some videos on servers)
-	if opts.CookiesFile != "" {
-		args = append(args, "--cookies", opts.CookiesFile)
-	}
-
 	// Add time range if specified
 	if opts.StartSec > 0 || opts.EndSec > 0 {
 		section := fmt.Sprintf("*%.0f-%.0f", opts.StartSec, opts.EndSec)
-		args = append(args, "--download-sections", section)
+		baseArgs = append(baseArgs, "--download-sections", section)
 	}
 
-	args = append(args, opts.URL)
+	// Try multiple strategies
+	strategies := []struct {
+		name string
+		args []string
+	}{
+		{
+			name: "cookies",
+			args: func() []string {
+				args := make([]string, len(baseArgs))
+				copy(args, baseArgs)
+				if opts.CookiesFile != "" {
+					args = append(args, "--cookies", opts.CookiesFile)
+				}
+				return args
+			}(),
+		},
+		{
+			name: "android",
+			args: append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=android"),
+		},
+		{
+			name: "mweb",
+			args: append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=mweb"),
+		},
+	}
 
 	logger.Info("Downloading video segment: %.0f-%.0f seconds", opts.StartSec, opts.EndSec)
-	logger.Debug("yt-dlp output: %s", outputPath)
 
-	cmd := exec.Command("yt-dlp", args...)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	var lastErr error
+	for _, strategy := range strategies {
+		// Remove old output file if exists from previous attempt
+		os.Remove(outputPath)
 
-	if err := cmd.Run(); err != nil {
-		logger.Error("yt-dlp stderr: %s", stderr.String())
-		return "", fmt.Errorf("download failed: %w", err)
+		args := append(strategy.args, opts.URL)
+		logger.Debug("Trying strategy: %s", strategy.name)
+
+		cmd := exec.Command("yt-dlp", args...)
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+
+		if err := cmd.Run(); err != nil {
+			stderrStr := stderr.String()
+			if strings.Contains(stderrStr, "Sign in") || strings.Contains(stderrStr, "bot") {
+				logger.Debug("Strategy %s failed: auth required, trying next...", strategy.name)
+				lastErr = fmt.Errorf("auth required")
+				continue
+			}
+			logger.Error("yt-dlp stderr: %s", stderrStr)
+			lastErr = fmt.Errorf("download failed: %w", err)
+			continue
+		}
+
+		logger.Info("Download completed with strategy: %s", strategy.name)
+		return outputPath, nil
 	}
 
-	logger.Info("Download completed: %s", outputPath)
-	return outputPath, nil
+	return "", lastErr
 }
 
 func DownloadFull(url, outputDir, outputFile string) (string, error) {
