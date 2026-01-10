@@ -30,6 +30,8 @@ type ClipResult struct {
 	OriginalURL string
 }
 
+type StatusCallback func(status string)
+
 func New(geminiKey string, cfg *config.Config) (*Clipper, error) {
 	gemini, err := ai.NewGeminiClient(geminiKey)
 	if err != nil {
@@ -49,8 +51,6 @@ func New(geminiKey string, cfg *config.Config) (*Clipper, error) {
 func (c *Clipper) Close() {
 	c.gemini.Close()
 }
-
-type StatusCallback func(status string)
 
 func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, error) {
 	maxDur := float64(c.cfg.MaxClipDurationSec)
