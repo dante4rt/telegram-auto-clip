@@ -41,7 +41,7 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 			"-o", outputPath,
 			"--no-playlist",
 			"--extractor-args", "youtube:player_client=ios,web,android",
-			"--print", "%(height)sp %(format_id)s",
+			"--print-to-file", "%(height)sp", outputPath + ".info",
 		}
 		if proxyURL != "" {
 			args = append(args, "--proxy", proxyURL)
@@ -72,8 +72,13 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 		}
 
 		// Log the format that was downloaded
-		format := strings.TrimSpace(stdout.String())
-		logger.Info("Download completed: %s", format)
+		infoFile := outputPath + ".info"
+		if data, err := os.ReadFile(infoFile); err == nil {
+			logger.Info("Download completed: %s", strings.TrimSpace(string(data)))
+			os.Remove(infoFile)
+		} else {
+			logger.Info("Download completed")
+		}
 		return outputPath, nil
 	}
 
