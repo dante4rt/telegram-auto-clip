@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"telegram-auto-clip/internal/ai"
+	"telegram-auto-clip/internal/cobalt"
 	"telegram-auto-clip/internal/config"
 	"telegram-auto-clip/internal/logger"
 	"telegram-auto-clip/internal/proxy"
@@ -17,6 +18,7 @@ import (
 
 type Clipper struct {
 	gemini *ai.GeminiClient
+	cobalt *cobalt.Client
 	cfg    *config.Config
 }
 
@@ -43,8 +45,16 @@ func New(geminiKey string, cfg *config.Config) (*Clipper, error) {
 		return nil, err
 	}
 
+	// Initialize cobalt client if URL is configured
+	var cobaltClient *cobalt.Client
+	if cfg.CobaltAPIURL != "" {
+		cobaltClient = cobalt.New(cfg.CobaltAPIURL)
+		logger.Info("Cobalt API enabled: %s", cfg.CobaltAPIURL)
+	}
+
 	return &Clipper{
 		gemini: gemini,
+		cobalt: cobaltClient,
 		cfg:    cfg,
 	}, nil
 }
@@ -144,17 +154,35 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 
 	onStatus("Downloading...")
 	rawFile := fmt.Sprintf("raw_%s.mp4", requestID)
-	rawPath, err := youtube.DownloadSegment(youtube.DownloadOptions{
-		URL:         url,
-		OutputDir:   outDir,
-		StartSec:    startSec,
-		EndSec:      endSec,
-		OutputFile:  rawFile,
-		CookiesFile: c.cfg.CookiesFile,
-		Proxies:     proxy.GetShuffled(),
-	})
-	if err != nil {
-		return nil, fmt.Errorf("download failed: %w", err)
+	rawPath := filepath.Join(outDir, rawFile)
+
+	// Strategy 1: Try cobalt first (better quality, no proxy issues)
+	var downloadErr error
+	if c.cobalt != nil {
+		logger.Info("Trying cobalt download...")
+		downloadErr = c.cobalt.DownloadSegment(url, rawPath, "1080", startSec, endSec)
+		if downloadErr == nil {
+			logger.Info("Cobalt download succeeded!")
+		} else {
+			logger.Debug("Cobalt download failed: %v, falling back to yt-dlp", downloadErr)
+		}
+	}
+
+	// Strategy 2: Fall back to yt-dlp with proxies
+	if downloadErr != nil || c.cobalt == nil {
+		rawPath, downloadErr = youtube.DownloadSegment(youtube.DownloadOptions{
+			URL:         url,
+			OutputDir:   outDir,
+			StartSec:    startSec,
+			EndSec:      endSec,
+			OutputFile:  rawFile,
+			CookiesFile: c.cfg.CookiesFile,
+			Proxies:     proxy.GetShuffled(),
+		})
+	}
+
+	if downloadErr != nil {
+		return nil, fmt.Errorf("download failed: %w", downloadErr)
 	}
 	defer os.Remove(rawPath)
 

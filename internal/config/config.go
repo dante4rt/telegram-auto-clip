@@ -14,21 +14,24 @@ type Config struct {
 	FallbackClipDuration  int     `json:"fallback_clip_duration_sec"`
 	FallbackStartPercent  float64 `json:"fallback_start_percent"`
 	CookiesFile           string  `json:"cookies_file"`
+	CobaltAPIURL          string  `json:"cobalt_api_url"`
 }
 
 func Load(path string) (*Config, error) {
+	cfg := Default()
+
 	file, err := os.Open(path)
-	if err != nil {
-		return Default(), nil // fallback to defaults
-	}
-	defer file.Close()
-
-	var cfg Config
-	if err := json.NewDecoder(file).Decode(&cfg); err != nil {
-		return Default(), nil
+	if err == nil {
+		defer file.Close()
+		json.NewDecoder(file).Decode(cfg)
 	}
 
-	return &cfg, nil
+	// Override with environment variables
+	if cobaltURL := os.Getenv("COBALT_API_URL"); cobaltURL != "" {
+		cfg.CobaltAPIURL = cobaltURL
+	}
+
+	return cfg, nil
 }
 
 func Default() *Config {
