@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"regexp"
 	"sort"
 	"strings"
 
@@ -52,22 +51,48 @@ func FetchHeatmap(videoID string, minScore float64) ([]HeatmapMarker, error) {
 }
 
 func parseHeatmapFromHTML(html string, minScore float64) ([]HeatmapMarker, error) {
-	// Match the pattern from reference: "markers":[...],"markersMetadata"
-	// Use (?s) for DOTALL mode in Go regex
-	re := regexp.MustCompile(`(?s)"markers":\s*(\[.*?\])\s*,\s*"?markersMetadata"?`)
-	matches := re.FindStringSubmatch(html)
-
-	if len(matches) < 2 {
-		logger.Debug("No heatmap markers found in page")
+	// Find "heatMarkerRenderer" which is specific to heatmap data
+	if !strings.Contains(html, "heatMarkerRenderer") {
+		logger.Debug("No heatMarkerRenderer found in page")
 		return nil, fmt.Errorf("no heatmap data found")
 	}
 
-	logger.Debug("Found heatmap data, parsing JSON...")
+	// Find markers array that contains heatMarkerRenderer
+	startIdx := strings.Index(html, `"markers":[{"heatMarkerRenderer"`)
+	if startIdx == -1 {
+		logger.Debug("No heatmap markers array found")
+		return nil, fmt.Errorf("no heatmap data found")
+	}
 
-	// Clean up the JSON (remove escaped quotes if needed)
-	jsonStr := strings.ReplaceAll(matches[1], `\"`, `"`)
+	// Move to the start of the array
+	startIdx = strings.Index(html[startIdx:], "[") + startIdx
 
-	// Parse the JSON array - markers contain heatMarkerRenderer
+	// Find matching closing bracket using bracket counting
+	depth := 0
+	endIdx := startIdx
+outer:
+	for i := startIdx; i < len(html); i++ {
+		switch html[i] {
+		case '[':
+			depth++
+		case ']':
+			depth--
+			if depth == 0 {
+				endIdx = i + 1
+				break outer
+			}
+		}
+	}
+
+	if endIdx <= startIdx {
+		logger.Debug("Could not find closing bracket for markers array")
+		return nil, fmt.Errorf("no heatmap data found")
+	}
+
+	jsonStr := html[startIdx:endIdx]
+	logger.Debug("Found heatmap data, parsing JSON (%d chars)...", len(jsonStr))
+
+	// Parse the JSON array
 	var rawMarkers []map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(jsonStr), &rawMarkers); err != nil {
 		logger.Error("Failed to parse markers JSON: %v", err)

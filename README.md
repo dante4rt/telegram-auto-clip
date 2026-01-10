@@ -40,7 +40,7 @@ pip install yt-dlp
 
 2. **Edit `.env`**
 
-   ```text
+   ```env
    TELEGRAM_BOT_TOKEN=your_token    # From @BotFather
    GEMINI_API_KEY=your_key          # From aistudio.google.com/apikey
    ```
@@ -72,6 +72,9 @@ Edit `config.json` to customize (all optional):
 
 ## Authentication
 
+> [!NOTE]
+> YouTube may require authentication for high-quality downloads on some servers.
+
 For servers getting "Sign in to confirm you're not a bot" errors:
 
 1. **Export YouTube cookies** from your browser using a cookie exporter extension
@@ -84,7 +87,35 @@ For servers getting "Sign in to confirm you're not a bot" errors:
    }
    ```
 
-**Note:** Cookies may expire after some time. Re-export if you get authentication errors.
+> [!WARNING]
+> Cookies may expire after some time. Re-export if you get authentication errors.
+
+## Segment Selection
+
+The bot uses multiple strategies to find the best clip:
+
+```text
+┌─────────────────────────────────────────────────────────┐
+│  1. YouTube Heatmap  →  "Most Replayed" data            │
+│  2. Gemini AI        →  Video analysis (if < 20 min)    │
+│  3. Fallback         →  20% into video or first 45 sec  │
+└─────────────────────────────────────────────────────────┘
+```
+
+> [!TIP]
+> Videos with more views tend to have better heatmap data for accurate segment detection.
+
+## Troubleshooting
+
+> [!IMPORTANT]
+> The Gemini free tier has a limit of 20 requests/day. Consider upgrading for heavy usage.
+
+| Issue                | Solution                           |
+| -------------------- | ---------------------------------- |
+| 360p quality         | Export fresh YouTube cookies       |
+| "Sign in to confirm" | Add cookies.txt to config          |
+| Video too large      | Clips are auto-compressed to <50MB |
+| Quota exceeded       | Wait 24h or upgrade Gemini plan    |
 
 ## Contributing
 

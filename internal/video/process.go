@@ -12,13 +12,15 @@ import (
 func ConvertToVertical(inputPath, outputDir string, maxDuration int) (string, error) {
 	outputPath := filepath.Join(outputDir, "clip_"+filepath.Base(inputPath))
 
-	// Keep original aspect ratio - no transformation
-	// User will add bars/effects later
+	// Encode with bitrate limit to stay under Telegram's 50MB limit
+	// For 60s video: 50MB = ~6.5Mbps, using 4M for safety margin
 	args := []string{
 		"-i", inputPath,
 		"-c:v", "libx264",
-		"-crf", "23",
+		"-crf", "26",
 		"-preset", "fast",
+		"-maxrate", "4M",
+		"-bufsize", "8M",
 		"-c:a", "aac",
 		"-b:a", "128k",
 		"-t", fmt.Sprintf("%d", maxDuration),
