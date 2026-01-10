@@ -18,13 +18,16 @@ A Telegram bot that creates viral-ready clips from YouTube videos using AI.
 - Go 1.24+
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 - [FFmpeg](https://ffmpeg.org/)
+- [Deno](https://deno.land/) (required on Linux servers for yt-dlp)
 
 ```bash
 # macOS
-brew install yt-dlp ffmpeg
+brew install yt-dlp ffmpeg deno
 
 # Linux
 sudo apt install ffmpeg && pip install yt-dlp
+curl -fsSL https://deno.land/install.sh | sh
+echo 'export PATH="$HOME/.deno/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
 ```
 
 ## Quick Start

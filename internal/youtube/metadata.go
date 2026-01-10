@@ -22,8 +22,6 @@ func FetchMetadata(url string, cookiesFile string) (*VideoMetadata, error) {
 		"--dump-json",
 		"--skip-download",
 		"--no-warnings",
-		"--ignore-errors",
-		"-f", "best", // Dummy format to prevent format errors
 	}
 
 	if cookiesFile != "" {
