@@ -30,6 +30,9 @@ func FetchMetadata(url string, cookiesFile string) (*VideoMetadata, error) {
 
 	args = append(args, url)
 
+	// Debug: log the full command
+	fmt.Printf("[DEBUG] yt-dlp command: yt-dlp %v\n", args)
+
 	cmd := exec.Command("yt-dlp", args...)
 
 	output, err := cmd.Output()
