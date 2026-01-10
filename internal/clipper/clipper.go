@@ -10,6 +10,7 @@ import (
 	"telegram-auto-clip/internal/ai"
 	"telegram-auto-clip/internal/config"
 	"telegram-auto-clip/internal/logger"
+	"telegram-auto-clip/internal/proxy"
 	"telegram-auto-clip/internal/video"
 	"telegram-auto-clip/internal/youtube"
 )
@@ -57,7 +58,7 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 	outDir := c.cfg.OutputDir
 
 	onStatus("Fetching video info...")
-	meta, err := youtube.FetchMetadata(url, c.cfg.CookiesFile)
+	meta, err := youtube.FetchMetadata(url, c.cfg.CookiesFile, proxy.GetRandom())
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch metadata: %w", err)
 	}
@@ -150,6 +151,7 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 		EndSec:      endSec,
 		OutputFile:  rawFile,
 		CookiesFile: c.cfg.CookiesFile,
+		ProxyURL:    proxy.GetRandom(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("download failed: %w", err)

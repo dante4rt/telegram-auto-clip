@@ -17,8 +17,14 @@ type VideoMetadata struct {
 	URL         string  `json:"webpage_url"`
 }
 
-func FetchMetadata(url string, cookiesFile string) (*VideoMetadata, error) {
-	// Try multiple strategies in order (ios+cookies is often the winning combo)
+func FetchMetadata(url string, cookiesFile string, proxyURL string) (*VideoMetadata, error) {
+	// Base args that all strategies share
+	baseArgs := []string{"--dump-json", "--skip-download", "--no-warnings"}
+	if proxyURL != "" {
+		baseArgs = append(baseArgs, "--proxy", proxyURL)
+	}
+
+	// Try multiple strategies in order
 	strategies := []struct {
 		name string
 		args []string
@@ -26,7 +32,8 @@ func FetchMetadata(url string, cookiesFile string) (*VideoMetadata, error) {
 		{
 			name: "ios_cookies",
 			args: func() []string {
-				args := []string{"--dump-json", "--skip-download", "--no-warnings", "--extractor-args", "youtube:player_client=ios"}
+				args := append([]string{}, baseArgs...)
+				args = append(args, "--extractor-args", "youtube:player_client=ios")
 				if cookiesFile != "" {
 					args = append(args, "--cookies", cookiesFile)
 				}
@@ -36,7 +43,8 @@ func FetchMetadata(url string, cookiesFile string) (*VideoMetadata, error) {
 		{
 			name: "tv_cookies",
 			args: func() []string {
-				args := []string{"--dump-json", "--skip-download", "--no-warnings", "--extractor-args", "youtube:player_client=tv_embedded"}
+				args := append([]string{}, baseArgs...)
+				args = append(args, "--extractor-args", "youtube:player_client=tv_embedded")
 				if cookiesFile != "" {
 					args = append(args, "--cookies", cookiesFile)
 				}
@@ -46,7 +54,8 @@ func FetchMetadata(url string, cookiesFile string) (*VideoMetadata, error) {
 		{
 			name: "android_cookies",
 			args: func() []string {
-				args := []string{"--dump-json", "--skip-download", "--no-warnings", "--extractor-args", "youtube:player_client=android"}
+				args := append([]string{}, baseArgs...)
+				args = append(args, "--extractor-args", "youtube:player_client=android")
 				if cookiesFile != "" {
 					args = append(args, "--cookies", cookiesFile)
 				}
@@ -55,12 +64,12 @@ func FetchMetadata(url string, cookiesFile string) (*VideoMetadata, error) {
 		},
 		{
 			name: "ios",
-			args: []string{"--dump-json", "--skip-download", "--no-warnings", "--extractor-args", "youtube:player_client=ios"},
+			args: append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=ios"),
 		},
 		{
 			name: "cookies",
 			args: func() []string {
-				args := []string{"--dump-json", "--skip-download", "--no-warnings"}
+				args := append([]string{}, baseArgs...)
 				if cookiesFile != "" {
 					args = append(args, "--cookies", cookiesFile)
 				}

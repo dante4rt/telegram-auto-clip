@@ -8,6 +8,7 @@ import (
 	"telegram-auto-clip/internal/bot"
 	"telegram-auto-clip/internal/config"
 	"telegram-auto-clip/internal/logger"
+	"telegram-auto-clip/internal/proxy"
 
 	"github.com/joho/godotenv"
 )
@@ -15,6 +16,11 @@ import (
 func main() {
 	if err := godotenv.Load(); err != nil {
 		logger.Info("No .env file found, using environment variables")
+	}
+
+	proxy.Init()
+	if proxy.Count() > 0 {
+		logger.Info("Loaded %d proxies", proxy.Count())
 	}
 
 	cfg, _ := config.Load("config.json")

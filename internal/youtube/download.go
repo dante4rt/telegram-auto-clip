@@ -18,6 +18,7 @@ type DownloadOptions struct {
 	EndSec      float64
 	OutputFile  string
 	CookiesFile string
+	ProxyURL    string
 }
 
 func DownloadSegment(opts DownloadOptions) (string, error) {
@@ -34,6 +35,9 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 		"-o", outputPath,
 		"--no-warnings",
 		"--no-playlist",
+	}
+	if opts.ProxyURL != "" {
+		baseArgs = append(baseArgs, "--proxy", opts.ProxyURL)
 	}
 
 	// Add time range if specified
