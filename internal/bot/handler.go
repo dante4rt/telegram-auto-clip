@@ -20,14 +20,20 @@ type Bot struct {
 
 func New(token, geminiKey string, cfg *config.Config) (*Bot, error) {
 	pref := tele.Settings{
-		Token:  token,
-		Poller: &tele.LongPoller{Timeout: time.Duration(cfg.PollTimeoutSec) * time.Second},
+		Token: token,
+		Poller: &tele.LongPoller{
+			Timeout:        time.Duration(cfg.PollTimeoutSec) * time.Second,
+			AllowedUpdates: []string{"message"},
+		},
 	}
 
 	b, err := tele.NewBot(pref)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create bot: %w", err)
 	}
+
+	// Drop pending updates from before restart
+	_, _ = b.Raw("deleteWebhook", map[string]bool{"drop_pending_updates": true})
 
 	clip, err := clipper.New(geminiKey, cfg)
 	if err != nil {
@@ -45,8 +51,25 @@ func (b *Bot) Start() {
 	b.bot.Handle("/help", b.handleHelp)
 	b.bot.Handle("/clip", b.handleClip)
 
+	// Handle plain text YouTube URLs (without /clip command)
+	b.bot.Handle(tele.OnText, b.handleText)
+
 	logger.Info("Bot started, waiting for messages...")
 	b.bot.Start()
+}
+
+func (b *Bot) handleText(c tele.Context) error {
+	text := strings.TrimSpace(c.Text())
+
+	// If it looks like a YouTube URL, process it
+	if youtube.IsValidYouTubeURL(text) {
+		// Fake the payload so handleClip can process it
+		c.Message().Payload = text
+		return b.handleClip(c)
+	}
+
+	// Ignore other text
+	return nil
 }
 
 func (b *Bot) Stop() {
