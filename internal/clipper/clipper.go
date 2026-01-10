@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"telegram-auto-clip/internal/ai"
-	"telegram-auto-clip/internal/cobalt"
 	"telegram-auto-clip/internal/config"
 	"telegram-auto-clip/internal/logger"
 	"telegram-auto-clip/internal/proxy"
@@ -18,7 +17,6 @@ import (
 
 type Clipper struct {
 	gemini *ai.GeminiClient
-	cobalt *cobalt.Client
 	cfg    *config.Config
 }
 
@@ -45,16 +43,8 @@ func New(geminiKey string, cfg *config.Config) (*Clipper, error) {
 		return nil, err
 	}
 
-	// Initialize cobalt client if URL is configured
-	var cobaltClient *cobalt.Client
-	if cfg.CobaltAPIURL != "" {
-		cobaltClient = cobalt.New(cfg.CobaltAPIURL)
-		logger.Info("Cobalt API enabled: %s", cfg.CobaltAPIURL)
-	}
-
 	return &Clipper{
 		gemini: gemini,
-		cobalt: cobaltClient,
 		cfg:    cfg,
 	}, nil
 }
@@ -81,7 +71,6 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 		return nil, fmt.Errorf("invalid YouTube URL")
 	}
 
-	// Unique request ID to handle concurrent requests for same video
 	requestID := fmt.Sprintf("%s_%d_%d", videoID, time.Now().UnixMilli(), rand.Intn(1000))
 	logger.Info("[%s] Processing request", requestID)
 
@@ -94,7 +83,6 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 		clipReason = "Full video"
 		onStatus("Short video, clipping entire video...")
 	} else {
-		// Strategy 1: Try heatmap first (fastest if available)
 		onStatus("Analyzing engagement data...")
 		markers, heatmapErr := youtube.FetchHeatmap(videoID, c.cfg.MinHeatmapScore)
 		if heatmapErr != nil {
@@ -111,30 +99,25 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 			}
 		}
 
-		// Strategy 2: Use Gemini to watch the video and find best moment
-		// Only for videos within AI duration limit (longer videos exceed Gemini token limit)
 		if startSec == 0 && clipDurationSec == 0 && meta.Duration <= float64(c.cfg.MaxAIVideoDurationSec) {
 			onStatus("AI is watching the video to find best moment...")
 			suggestion, err := c.gemini.AnalyzeYouTubeVideo(url, meta.Title, meta.Duration, maxDur)
 			if err == nil && suggestion != nil {
 				startSec = suggestion.StartSec
-				clipDurationSec = suggestion.Duration // Use dynamic duration from AI
+				clipDurationSec = suggestion.Duration
 				clipReason = suggestion.Reason
 				onStatus(fmt.Sprintf("AI found best moment at %s (%.0f sec): %s",
 					youtube.FormatDuration(startSec), clipDurationSec, suggestion.Reason))
-			} else {
-				if err != nil {
-					logger.Error("AI video analysis failed: %v", err)
-				}
+			} else if err != nil {
+				logger.Error("AI video analysis failed: %v", err)
 			}
 		} else if startSec == 0 && clipDurationSec == 0 {
 			logger.Debug("Video too long for AI analysis (%.0f min), skipping", meta.Duration/60)
 		}
 
-		// Strategy 3: Fallback - pick from middle of video (more interesting than intro)
 		if startSec == 0 && clipDurationSec == 0 {
 			clipDurationSec = float64(c.cfg.FallbackClipDuration)
-			if meta.Duration > 300 { // > 5 min: start from configured percentage into video
+			if meta.Duration > 300 {
 				startSec = meta.Duration * c.cfg.FallbackStartPercent
 				clipReason = "Early highlight"
 				onStatus(fmt.Sprintf("Using segment from %s...", youtube.FormatDuration(startSec)))
@@ -146,7 +129,6 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 		}
 	}
 
-	// Add small buffer for context
 	endSec := startSec + clipDurationSec + 5
 	if endSec > meta.Duration {
 		endSec = meta.Duration
@@ -154,40 +136,21 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 
 	onStatus("Downloading...")
 	rawFile := fmt.Sprintf("raw_%s.mp4", requestID)
-	rawPath := filepath.Join(outDir, rawFile)
-
-	// Strategy 1: Try cobalt first (better quality, no proxy issues)
-	var downloadErr error
-	if c.cobalt != nil {
-		logger.Info("Trying cobalt download...")
-		downloadErr = c.cobalt.DownloadSegment(url, rawPath, "1080", startSec, endSec)
-		if downloadErr == nil {
-			logger.Info("Cobalt download succeeded!")
-		} else {
-			logger.Debug("Cobalt download failed: %v, falling back to yt-dlp", downloadErr)
-		}
-	}
-
-	// Strategy 2: Fall back to yt-dlp with proxies
-	if downloadErr != nil || c.cobalt == nil {
-		rawPath, downloadErr = youtube.DownloadSegment(youtube.DownloadOptions{
-			URL:         url,
-			OutputDir:   outDir,
-			StartSec:    startSec,
-			EndSec:      endSec,
-			OutputFile:  rawFile,
-			CookiesFile: c.cfg.CookiesFile,
-			Proxies:     proxy.GetShuffled(),
-		})
-	}
-
-	if downloadErr != nil {
-		return nil, fmt.Errorf("download failed: %w", downloadErr)
+	rawPath, err := youtube.DownloadSegment(youtube.DownloadOptions{
+		URL:         url,
+		OutputDir:   outDir,
+		StartSec:    startSec,
+		EndSec:      endSec,
+		OutputFile:  rawFile,
+		CookiesFile: c.cfg.CookiesFile,
+		Proxies:     proxy.GetShuffled(),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("download failed: %w", err)
 	}
 	defer os.Remove(rawPath)
 
 	onStatus("Processing video to vertical...")
-	// Use actual clip duration instead of max duration
 	actualDuration := int(clipDurationSec) + 5
 	if actualDuration > c.cfg.MaxClipDurationSec {
 		actualDuration = c.cfg.MaxClipDurationSec
@@ -199,7 +162,6 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 
 	onStatus("Generating caption...")
 	var caption, hashtags string
-	// Use fast caption generation (no video watching, just text)
 	captionResult, err := c.gemini.GenerateCaptionFast(meta.Title, meta.Channel, clipReason)
 	if err == nil {
 		caption = captionResult.Caption

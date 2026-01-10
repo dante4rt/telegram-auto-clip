@@ -14,7 +14,6 @@ type Config struct {
 	FallbackClipDuration  int     `json:"fallback_clip_duration_sec"`
 	FallbackStartPercent  float64 `json:"fallback_start_percent"`
 	CookiesFile           string  `json:"cookies_file"`
-	CobaltAPIURL          string  `json:"cobalt_api_url"`
 }
 
 func Load(path string) (*Config, error) {
@@ -24,11 +23,6 @@ func Load(path string) (*Config, error) {
 	if err == nil {
 		defer file.Close()
 		json.NewDecoder(file).Decode(cfg)
-	}
-
-	// Override with environment variables
-	if cobaltURL := os.Getenv("COBALT_API_URL"); cobaltURL != "" {
-		cfg.CobaltAPIURL = cobaltURL
 	}
 
 	return cfg, nil

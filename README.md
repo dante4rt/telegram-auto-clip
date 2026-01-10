@@ -17,17 +17,15 @@ A Telegram bot that creates viral-ready clips from YouTube videos using AI.
 
 - Go 1.24+
 - [FFmpeg](https://ffmpeg.org/)
-- [Cobalt](https://github.com/imputnet/cobalt) (recommended) OR [yt-dlp](https://github.com/yt-dlp/yt-dlp)
+- [yt-dlp](https://github.com/yt-dlp/yt-dlp)
 
 ```bash
 # macOS
-brew install ffmpeg
+brew install ffmpeg yt-dlp
 
 # Linux
 sudo apt install ffmpeg
-
-# Optional: yt-dlp as fallback
-brew install yt-dlp  # or: pip install yt-dlp
+pip install yt-dlp
 ```
 
 ## Quick Start
@@ -45,8 +43,6 @@ brew install yt-dlp  # or: pip install yt-dlp
    ```text
    TELEGRAM_BOT_TOKEN=your_token    # From @BotFather
    GEMINI_API_KEY=your_key          # From aistudio.google.com/apikey
-   COBALT_API_URL=http://localhost:9000  # Optional but recommended
-   PROXY_LIST=ip:port:user:pass     # Optional fallback for yt-dlp
    ```
 
 3. **Run**
@@ -73,31 +69,22 @@ Edit `config.json` to customize (all optional):
 | `fallback_clip_duration_sec` | Fallback clip length                 | 45      |
 | `fallback_start_percent`     | Start position for fallback          | 0.2     |
 | `cookies_file`               | Path to cookies.txt for YouTube auth | ""      |
-| `cobalt_api_url`             | Cobalt API URL (or use env var)      | ""      |
 
-## Download Strategy
-
-The bot tries these methods in order:
-
-1. **Cobalt API** (recommended) - High quality, no auth issues
-2. **yt-dlp + Proxies** - Fallback if cobalt unavailable
-
-### Setting up Cobalt (Recommended)
-
-```bash
-# Run cobalt with Docker
-docker run -d -p 9000:9000 ghcr.io/imputnet/cobalt:latest
-
-# Then set in .env
-COBALT_API_URL=http://localhost:9000
-```
-
-### Fallback: Proxies for yt-dlp
+## Authentication
 
 For servers getting "Sign in to confirm you're not a bot" errors:
 
-- Add `PROXY_LIST` in `.env` with residential proxies (format: `ip:port:user:pass`)
-- Or use cookies: Export from browser, set `cookies_file` in config.json
+1. **Export YouTube cookies** from your browser using a cookie exporter extension
+2. Save as `cookies.txt` in Netscape format
+3. Set `cookies_file` in `config.json`:
+
+   ```json
+   {
+     "cookies_file": "cookies.txt"
+   }
+   ```
+
+**Note:** Cookies may expire after some time. Re-export if you get authentication errors.
 
 ## Contributing
 
