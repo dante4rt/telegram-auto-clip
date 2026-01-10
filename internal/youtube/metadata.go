@@ -20,8 +20,10 @@ type VideoMetadata struct {
 func FetchMetadata(url string, cookiesFile string) (*VideoMetadata, error) {
 	args := []string{
 		"--dump-json",
-		"--no-download",
+		"--skip-download",
 		"--no-warnings",
+		"--ignore-errors",
+		"-f", "best", // Dummy format to prevent format errors
 	}
 
 	if cookiesFile != "" {
