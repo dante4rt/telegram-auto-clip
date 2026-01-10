@@ -42,18 +42,44 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 		baseArgs = append(baseArgs, "--download-sections", section)
 	}
 
-	// Try multiple strategies (ios and tv_embedded often work best)
+	// Try multiple strategies (ios+cookies is often the winning combo)
 	strategies := []struct {
 		name string
 		args []string
 	}{
 		{
-			name: "ios",
-			args: append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=ios"),
+			name: "ios_cookies",
+			args: func() []string {
+				args := append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=ios")
+				if opts.CookiesFile != "" {
+					args = append(args, "--cookies", opts.CookiesFile)
+				}
+				return args
+			}(),
 		},
 		{
-			name: "tv_embedded",
-			args: append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=tv_embedded"),
+			name: "tv_cookies",
+			args: func() []string {
+				args := append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=tv_embedded")
+				if opts.CookiesFile != "" {
+					args = append(args, "--cookies", opts.CookiesFile)
+				}
+				return args
+			}(),
+		},
+		{
+			name: "android_cookies",
+			args: func() []string {
+				args := append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=android")
+				if opts.CookiesFile != "" {
+					args = append(args, "--cookies", opts.CookiesFile)
+				}
+				return args
+			}(),
+		},
+		{
+			name: "ios",
+			args: append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=ios"),
 		},
 		{
 			name: "cookies",
@@ -65,18 +91,6 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 				}
 				return args
 			}(),
-		},
-		{
-			name: "android",
-			args: append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=android"),
-		},
-		{
-			name: "mweb",
-			args: append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=mweb"),
-		},
-		{
-			name: "web_creator",
-			args: append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=web_creator"),
 		},
 	}
 

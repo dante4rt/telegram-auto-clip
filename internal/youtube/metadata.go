@@ -18,18 +18,44 @@ type VideoMetadata struct {
 }
 
 func FetchMetadata(url string, cookiesFile string) (*VideoMetadata, error) {
-	// Try multiple strategies in order (ios and tv_embedded often work best)
+	// Try multiple strategies in order (ios+cookies is often the winning combo)
 	strategies := []struct {
 		name string
 		args []string
 	}{
 		{
-			name: "ios",
-			args: []string{"--dump-json", "--skip-download", "--no-warnings", "--extractor-args", "youtube:player_client=ios"},
+			name: "ios_cookies",
+			args: func() []string {
+				args := []string{"--dump-json", "--skip-download", "--no-warnings", "--extractor-args", "youtube:player_client=ios"}
+				if cookiesFile != "" {
+					args = append(args, "--cookies", cookiesFile)
+				}
+				return args
+			}(),
 		},
 		{
-			name: "tv_embedded",
-			args: []string{"--dump-json", "--skip-download", "--no-warnings", "--extractor-args", "youtube:player_client=tv_embedded"},
+			name: "tv_cookies",
+			args: func() []string {
+				args := []string{"--dump-json", "--skip-download", "--no-warnings", "--extractor-args", "youtube:player_client=tv_embedded"}
+				if cookiesFile != "" {
+					args = append(args, "--cookies", cookiesFile)
+				}
+				return args
+			}(),
+		},
+		{
+			name: "android_cookies",
+			args: func() []string {
+				args := []string{"--dump-json", "--skip-download", "--no-warnings", "--extractor-args", "youtube:player_client=android"}
+				if cookiesFile != "" {
+					args = append(args, "--cookies", cookiesFile)
+				}
+				return args
+			}(),
+		},
+		{
+			name: "ios",
+			args: []string{"--dump-json", "--skip-download", "--no-warnings", "--extractor-args", "youtube:player_client=ios"},
 		},
 		{
 			name: "cookies",
@@ -40,18 +66,6 @@ func FetchMetadata(url string, cookiesFile string) (*VideoMetadata, error) {
 				}
 				return args
 			}(),
-		},
-		{
-			name: "android",
-			args: []string{"--dump-json", "--skip-download", "--no-warnings", "--extractor-args", "youtube:player_client=android"},
-		},
-		{
-			name: "mweb",
-			args: []string{"--dump-json", "--skip-download", "--no-warnings", "--extractor-args", "youtube:player_client=mweb"},
-		},
-		{
-			name: "web_creator",
-			args: []string{"--dump-json", "--skip-download", "--no-warnings", "--extractor-args", "youtube:player_client=web_creator"},
 		},
 	}
 
