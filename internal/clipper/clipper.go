@@ -57,7 +57,7 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 	outDir := c.cfg.OutputDir
 
 	onStatus("Fetching video info...")
-	meta, err := youtube.FetchMetadata(url)
+	meta, err := youtube.FetchMetadata(url, c.cfg.CookiesFile)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch metadata: %w", err)
 	}

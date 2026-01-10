@@ -17,13 +17,20 @@ type VideoMetadata struct {
 	URL         string  `json:"webpage_url"`
 }
 
-func FetchMetadata(url string) (*VideoMetadata, error) {
-	cmd := exec.Command("yt-dlp",
+func FetchMetadata(url string, cookiesFile string) (*VideoMetadata, error) {
+	args := []string{
 		"--dump-json",
 		"--no-download",
 		"--no-warnings",
-		url,
-	)
+	}
+
+	if cookiesFile != "" {
+		args = append(args, "--cookies", cookiesFile)
+	}
+
+	args = append(args, url)
+
+	cmd := exec.Command("yt-dlp", args...)
 
 	output, err := cmd.Output()
 	if err != nil {

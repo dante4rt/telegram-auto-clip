@@ -27,7 +27,7 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 	outputPath := filepath.Join(opts.OutputDir, opts.OutputFile)
 
 	args := []string{
-		"-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]",
+		"-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
 		"--merge-output-format", "mp4",
 		"-o", outputPath,
 		"--no-warnings",
