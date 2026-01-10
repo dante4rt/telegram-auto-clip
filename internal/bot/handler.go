@@ -2,9 +2,12 @@ package bot
 
 import (
 	"fmt"
-	"log"
 	"strings"
+	"time"
+
 	"telegram-auto-clip/internal/clipper"
+	"telegram-auto-clip/internal/config"
+	"telegram-auto-clip/internal/logger"
 	"telegram-auto-clip/internal/youtube"
 
 	tele "gopkg.in/telebot.v3"
@@ -15,9 +18,10 @@ type Bot struct {
 	clipper *clipper.Clipper
 }
 
-func New(token, geminiKey, outputDir string) (*Bot, error) {
+func New(token, geminiKey string, cfg *config.Config) (*Bot, error) {
 	pref := tele.Settings{
-		Token: token,
+		Token:  token,
+		Poller: &tele.LongPoller{Timeout: time.Duration(cfg.PollTimeoutSec) * time.Second},
 	}
 
 	b, err := tele.NewBot(pref)
@@ -25,7 +29,7 @@ func New(token, geminiKey, outputDir string) (*Bot, error) {
 		return nil, fmt.Errorf("failed to create bot: %w", err)
 	}
 
-	clip, err := clipper.New(geminiKey, outputDir)
+	clip, err := clipper.New(geminiKey, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create clipper: %w", err)
 	}
@@ -41,7 +45,7 @@ func (b *Bot) Start() {
 	b.bot.Handle("/help", b.handleHelp)
 	b.bot.Handle("/clip", b.handleClip)
 
-	log.Println("Bot started...")
+	logger.Info("Bot started, waiting for messages...")
 	b.bot.Start()
 }
 
@@ -51,55 +55,87 @@ func (b *Bot) Stop() {
 }
 
 func (b *Bot) handleStart(c tele.Context) error {
-	return c.Send("Welcome to Auto Clipper Bot!\n\nSend /clip <youtube_url> to create a viral clip.")
+	msg := `Hey! Welcome to Auto Clipper Bot!
+
+I'll help you create viral clips from YouTube videos!
+
+Just send:
+/clip <youtube_url>
+
+Example:
+/clip https://youtube.com/watch?v=xxxxx
+
+I'll find the best moment and convert it to vertical format!`
+	return c.Send(msg)
 }
 
 func (b *Bot) handleHelp(c tele.Context) error {
 	help := `Auto Clipper Bot
 
 Commands:
-/clip <url> - Create a 60s vertical clip from YouTube video
+/clip <url> - Create a vertical clip from YouTube
 
-Example:
-/clip https://youtube.com/watch?v=xxxxx
+What I do:
+1. Find the most engaging moment
+2. Convert to vertical 9:16 (full screen)
+3. Generate AI caption + hashtags
+4. Send the clip back!
 
-The bot will:
-1. Find the most engaging segment
-2. Convert to vertical format (9:16)
-3. Generate AI caption and hashtags
-4. Send the clip back to you`
+Clip duration is dynamic (15-60 sec) based on content!`
 	return c.Send(help)
 }
 
 func (b *Bot) handleClip(c tele.Context) error {
+	logger.Info("Received /clip from user %d", c.Sender().ID)
+
 	args := strings.TrimSpace(c.Message().Payload)
 	if args == "" {
-		return c.Send("Usage: /clip <youtube_url>\n\nExample: /clip https://youtube.com/watch?v=xxxxx")
+		return c.Send("Hey, where's the YouTube link?\n\nUsage: /clip <youtube_url>\n\nExample:\n/clip https://youtube.com/watch?v=xxxxx")
 	}
 
 	url := strings.Fields(args)[0]
+	logger.Info("Processing URL: %s", url)
+
 	if !youtube.IsValidYouTubeURL(url) {
-		return c.Send("Invalid YouTube URL. Please provide a valid YouTube link.")
+		return c.Send("Hmm, that doesn't look like a valid YouTube URL. Please try again!")
 	}
 
-	// Send initial status
-	statusMsg, err := b.bot.Send(c.Chat(), "Processing...")
+	// Initial status
+	statusMsg, err := b.bot.Send(c.Chat(), "Got it! Processing your video...")
 	if err != nil {
+		logger.Error("Failed to send status: %v", err)
 		return err
 	}
 
-	// Process the clip
-	result, err := b.clipper.Process(url, func(status string) {
-		b.bot.Edit(statusMsg, status)
-	})
+	// Update status message (edit the same message)
+	updateStatus := func(status string) {
+		logger.Info("Status: %s", status)
+		_, err := b.bot.Edit(statusMsg, status)
+		if err != nil {
+			logger.Debug("Edit failed: %v", err)
+		}
+	}
+
+	result, err := b.clipper.Process(url, updateStatus)
 	if err != nil {
-		b.bot.Edit(statusMsg, fmt.Sprintf("Error: %v", err))
+		logger.Error("Processing failed: %v", err)
+		b.bot.Edit(statusMsg, fmt.Sprintf("Oops! Error: %v\n\nPlease try again later!", err))
 		return nil
 	}
 	defer b.clipper.Cleanup(result)
 
-	// Build caption
-	caption := fmt.Sprintf("%s\n\n%s\n\n---\nTitle: %s\nDuration: %s\nPlatform: %s\nChannel: %s",
+	logger.Info("Clip ready: %s", result.VideoPath)
+	b.bot.Edit(statusMsg, "Clip ready! Uploading...")
+
+	caption := fmt.Sprintf(`%s
+
+%s
+
+---
+Title: %s
+Duration: %s
+Platform: %s
+Channel: %s`,
 		result.Caption,
 		result.Hashtags,
 		result.Title,
@@ -108,23 +144,23 @@ func (b *Bot) handleClip(c tele.Context) error {
 		result.Channel,
 	)
 
-	// Send video
 	video := &tele.Video{
 		File:    tele.FromDisk(result.VideoPath),
-		Caption: truncateCaption(caption, 1024),
+		Caption: truncate(caption, 1024),
 	}
 
 	if err := c.Send(video); err != nil {
-		b.bot.Edit(statusMsg, fmt.Sprintf("Failed to send video: %v", err))
+		logger.Error("Failed to send video: %v", err)
+		b.bot.Edit(statusMsg, fmt.Sprintf("Upload failed: %v\n\nFile might be too large, please try again!", err))
 		return nil
 	}
 
-	// Delete status message
 	b.bot.Delete(statusMsg)
+	logger.Info("Video sent successfully to user %d", c.Sender().ID)
 	return nil
 }
 
-func truncateCaption(s string, maxLen int) string {
+func truncate(s string, maxLen int) string {
 	if len(s) <= maxLen {
 		return s
 	}

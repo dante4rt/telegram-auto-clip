@@ -2,17 +2,21 @@ package clipper
 
 import (
 	"fmt"
+	"math/rand"
 	"os"
 	"path/filepath"
+	"time"
+
 	"telegram-auto-clip/internal/ai"
-	"telegram-auto-clip/internal/transcript"
+	"telegram-auto-clip/internal/config"
+	"telegram-auto-clip/internal/logger"
 	"telegram-auto-clip/internal/video"
 	"telegram-auto-clip/internal/youtube"
 )
 
 type Clipper struct {
-	gemini    *ai.GeminiClient
-	outputDir string
+	gemini *ai.GeminiClient
+	cfg    *config.Config
 }
 
 type ClipResult struct {
@@ -26,19 +30,19 @@ type ClipResult struct {
 	OriginalURL string
 }
 
-func New(geminiKey, outputDir string) (*Clipper, error) {
+func New(geminiKey string, cfg *config.Config) (*Clipper, error) {
 	gemini, err := ai.NewGeminiClient(geminiKey)
 	if err != nil {
 		return nil, err
 	}
 
-	if err := os.MkdirAll(outputDir, 0755); err != nil {
+	if err := os.MkdirAll(cfg.OutputDir, 0755); err != nil {
 		return nil, err
 	}
 
 	return &Clipper{
-		gemini:    gemini,
-		outputDir: outputDir,
+		gemini: gemini,
+		cfg:    cfg,
 	}, nil
 }
 
@@ -49,14 +53,16 @@ func (c *Clipper) Close() {
 type StatusCallback func(status string)
 
 func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, error) {
-	// 1. Fetch metadata
+	maxDur := float64(c.cfg.MaxClipDurationSec)
+	outDir := c.cfg.OutputDir
+
 	onStatus("Fetching video info...")
 	meta, err := youtube.FetchMetadata(url)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch metadata: %w", err)
 	}
 
-	onStatus(fmt.Sprintf("Video found: %s | Duration: %s | Channel: %s",
+	onStatus(fmt.Sprintf("Found: %s | %s | %s",
 		meta.Title, youtube.FormatDuration(meta.Duration), meta.Channel))
 
 	videoID := youtube.ExtractVideoID(url)
@@ -64,59 +70,73 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 		return nil, fmt.Errorf("invalid YouTube URL")
 	}
 
-	// 2. Find best segment
-	var startSec, endSec float64
+	// Unique request ID to handle concurrent requests for same video
+	requestID := fmt.Sprintf("%s_%d_%d", videoID, time.Now().UnixMilli(), rand.Intn(1000))
+	logger.Info("[%s] Processing request", requestID)
 
-	if meta.Duration <= 70 {
-		// Short video, use entire thing
+	var startSec, clipDurationSec float64
+	var clipReason string
+
+	if meta.Duration <= maxDur+10 {
 		startSec = 0
-		endSec = meta.Duration
+		clipDurationSec = meta.Duration
+		clipReason = "Full video"
 		onStatus("Short video, clipping entire video...")
 	} else {
-		// Try heatmap first
+		// Strategy 1: Try heatmap first (fastest if available)
 		onStatus("Analyzing engagement data...")
-		markers, err := youtube.FetchHeatmap(videoID)
-		if err == nil && len(markers) > 0 {
-			segment := youtube.FindBestSegment(markers, 60)
+		markers, heatmapErr := youtube.FetchHeatmap(videoID)
+		if heatmapErr != nil {
+			logger.Debug("Heatmap fetch failed: %v", heatmapErr)
+		}
+		if heatmapErr == nil && len(markers) > 0 {
+			segment := youtube.FindBestSegment(markers, maxDur)
 			if segment != nil {
 				startSec = segment.StartSec
-				endSec = segment.EndSec
-				onStatus(fmt.Sprintf("Found high-engagement segment at %s",
+				clipDurationSec = segment.EndSec - segment.StartSec
+				clipReason = "High engagement segment"
+				onStatus(fmt.Sprintf("Found viral segment at %s!",
 					youtube.FormatDuration(startSec)))
 			}
 		}
 
-		// Fallback to Gemini if no heatmap
-		if startSec == 0 && endSec == 0 {
-			onStatus("No heatmap, using AI to find best segment...")
-
-			// Get transcript for AI analysis
-			trans, _ := transcript.FetchTranscript(url, c.outputDir)
-			if trans != "" {
-				suggestion, err := c.gemini.SuggestBestSegment(meta.Title, trans, meta.Duration)
-				if err == nil {
-					startSec = suggestion.StartSec
-					endSec = startSec + 70 // 60s + padding
-					onStatus(fmt.Sprintf("AI selected segment at %s: %s",
-						youtube.FormatDuration(startSec), suggestion.Reason))
+		// Strategy 2: Use Gemini to watch the video and find best moment
+		if startSec == 0 && clipDurationSec == 0 {
+			onStatus("AI is watching the video to find best moment...")
+			suggestion, err := c.gemini.AnalyzeYouTubeVideo(url, meta.Title, meta.Duration, maxDur)
+			if err == nil && suggestion != nil {
+				startSec = suggestion.StartSec
+				clipDurationSec = suggestion.Duration // Use dynamic duration from AI
+				clipReason = suggestion.Reason
+				onStatus(fmt.Sprintf("AI found best moment at %s (%.0f sec): %s",
+					youtube.FormatDuration(startSec), clipDurationSec, suggestion.Reason))
+			} else {
+				if err != nil {
+					logger.Error("AI video analysis failed: %v", err)
 				}
 			}
 		}
 
-		// Final fallback: first minute
-		if startSec == 0 && endSec == 0 {
+		// Strategy 3: Fallback to first 30 seconds
+		if startSec == 0 && clipDurationSec == 0 {
 			startSec = 0
-			endSec = 70
-			onStatus("Using first minute of video...")
+			clipDurationSec = 30
+			clipReason = "Video intro"
+			onStatus("Using first 30 seconds...")
 		}
 	}
 
-	// 3. Download segment
+	// Add small buffer for context
+	endSec := startSec + clipDurationSec + 5
+	if endSec > meta.Duration {
+		endSec = meta.Duration
+	}
+
 	onStatus("Downloading...")
-	rawFile := fmt.Sprintf("raw_%s.mp4", videoID)
+	rawFile := fmt.Sprintf("raw_%s.mp4", requestID)
 	rawPath, err := youtube.DownloadSegment(youtube.DownloadOptions{
 		URL:        url,
-		OutputDir:  c.outputDir,
+		OutputDir:  outDir,
 		StartSec:   startSec,
 		EndSec:     endSec,
 		OutputFile: rawFile,
@@ -126,29 +146,30 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 	}
 	defer os.Remove(rawPath)
 
-	// 4. Convert to vertical
-	onStatus("Processing video...")
-	finalPath, err := video.ConvertToVertical(rawPath, c.outputDir)
+	onStatus("Processing video to vertical...")
+	// Use actual clip duration instead of max duration
+	actualDuration := int(clipDurationSec) + 5
+	if actualDuration > c.cfg.MaxClipDurationSec {
+		actualDuration = c.cfg.MaxClipDurationSec
+	}
+	finalPath, err := video.ConvertToVertical(rawPath, outDir, actualDuration)
 	if err != nil {
 		return nil, fmt.Errorf("video processing failed: %w", err)
 	}
 
-	// 5. Get transcript for caption
 	onStatus("Generating caption...")
-	trans, _ := transcript.FetchTranscript(url, c.outputDir)
-
-	// 6. Generate caption with Gemini
 	var caption, hashtags string
-	captionResult, err := c.gemini.GenerateCaption(meta.Title, meta.Channel, trans)
+	// Use fast caption generation (no video watching, just text)
+	captionResult, err := c.gemini.GenerateCaptionFast(meta.Title, meta.Channel, clipReason)
 	if err == nil {
 		caption = captionResult.Caption
 		hashtags = captionResult.Hashtags
 	} else {
+		logger.Debug("Caption generation failed: %v, using title", err)
 		caption = meta.Title
-		hashtags = "#viral #fyp #trending"
+		hashtags = "#viral #fyp #trending #indonesia"
 	}
 
-	// Get actual clip duration
 	clipDuration, _ := video.GetVideoDuration(finalPath)
 
 	return &ClipResult{
@@ -167,12 +188,11 @@ func (c *Clipper) Cleanup(result *ClipResult) {
 	if result != nil && result.VideoPath != "" {
 		os.Remove(result.VideoPath)
 	}
-	// Clean temp files
-	files, _ := filepath.Glob(filepath.Join(c.outputDir, "raw_*"))
+	files, _ := filepath.Glob(filepath.Join(c.cfg.OutputDir, "raw_*"))
 	for _, f := range files {
 		os.Remove(f)
 	}
-	files, _ = filepath.Glob(filepath.Join(c.outputDir, "subs*"))
+	files, _ = filepath.Glob(filepath.Join(c.cfg.OutputDir, "subs*"))
 	for _, f := range files {
 		os.Remove(f)
 	}

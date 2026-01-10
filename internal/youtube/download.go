@@ -1,10 +1,13 @@
 package youtube
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"telegram-auto-clip/internal/logger"
 )
 
 type DownloadOptions struct {
@@ -38,14 +41,19 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 
 	args = append(args, opts.URL)
 
+	logger.Info("Downloading video segment: %.0f-%.0f seconds", opts.StartSec, opts.EndSec)
+	logger.Debug("yt-dlp output: %s", outputPath)
+
 	cmd := exec.Command("yt-dlp", args...)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 
 	if err := cmd.Run(); err != nil {
+		logger.Error("yt-dlp stderr: %s", stderr.String())
 		return "", fmt.Errorf("download failed: %w", err)
 	}
 
+	logger.Info("Download completed: %s", outputPath)
 	return outputPath, nil
 }
 

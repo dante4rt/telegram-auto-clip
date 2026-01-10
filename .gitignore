@@ -9,6 +9,7 @@ tmp/
 
 # Claude files
 .claude
+docs
 
 # Binary files
 telegram-auto-clip

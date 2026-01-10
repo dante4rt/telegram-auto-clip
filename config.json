@@ -1,0 +1,5 @@
+{
+  "poll_timeout_sec": 10,
+  "max_clip_duration_sec": 60,
+  "output_dir": "tmp"
+}

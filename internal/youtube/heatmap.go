@@ -7,12 +7,15 @@ import (
 	"net/http"
 	"regexp"
 	"sort"
+	"strings"
+
+	"telegram-auto-clip/internal/logger"
 )
 
 type HeatmapMarker struct {
-	StartMillis int     `json:"timeRangeStartMillis"`
-	MarkerDurMS int     `json:"markerDurationMillis"`
-	Intensity   float64 `json:"heatMarkerIntensityScoreNormalized"`
+	StartMillis int     `json:"startMillis"`
+	DurationMS  int     `json:"durationMillis"`
+	Intensity   float64 `json:"intensityScoreNormalized"`
 }
 
 type Segment struct {
@@ -20,6 +23,8 @@ type Segment struct {
 	EndSec   float64
 	Score    float64
 }
+
+const MinHeatmapScore = 0.40 // Minimum intensity to be considered viral
 
 func FetchHeatmap(videoID string) ([]HeatmapMarker, error) {
 	url := fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID)
@@ -44,32 +49,61 @@ func FetchHeatmap(videoID string) ([]HeatmapMarker, error) {
 		return nil, err
 	}
 
+	logger.Debug("Fetched YouTube page, size: %d bytes", len(body))
 	return parseHeatmapFromHTML(string(body))
 }
 
 func parseHeatmapFromHTML(html string) ([]HeatmapMarker, error) {
-	// Look for heatMarkers in the page
-	re := regexp.MustCompile(`"heatMarkers":\s*(\[.*?\])`)
+	// Match the pattern from reference: "markers":[...],"markersMetadata"
+	// Use (?s) for DOTALL mode in Go regex
+	re := regexp.MustCompile(`(?s)"markers":\s*(\[.*?\])\s*,\s*"?markersMetadata"?`)
 	matches := re.FindStringSubmatch(html)
 
 	if len(matches) < 2 {
+		logger.Debug("No heatmap markers found in page")
 		return nil, fmt.Errorf("no heatmap data found")
 	}
 
-	// Parse the JSON array
-	var rawMarkers []struct {
-		HeatMarkerRenderer HeatmapMarker `json:"heatMarkerRenderer"`
-	}
+	logger.Debug("Found heatmap data, parsing JSON...")
 
-	if err := json.Unmarshal([]byte(matches[1]), &rawMarkers); err != nil {
+	// Clean up the JSON (remove escaped quotes if needed)
+	jsonStr := strings.ReplaceAll(matches[1], `\"`, `"`)
+
+	// Parse the JSON array - markers contain heatMarkerRenderer
+	var rawMarkers []map[string]json.RawMessage
+	if err := json.Unmarshal([]byte(jsonStr), &rawMarkers); err != nil {
+		logger.Error("Failed to parse markers JSON: %v", err)
 		return nil, fmt.Errorf("failed to parse heatmap: %w", err)
 	}
 
-	markers := make([]HeatmapMarker, len(rawMarkers))
-	for i, rm := range rawMarkers {
-		markers[i] = rm.HeatMarkerRenderer
+	logger.Debug("Parsed %d raw markers", len(rawMarkers))
+
+	var markers []HeatmapMarker
+	for _, rm := range rawMarkers {
+		// Check if it has heatMarkerRenderer
+		if renderer, ok := rm["heatMarkerRenderer"]; ok {
+			var marker HeatmapMarker
+			if err := json.Unmarshal(renderer, &marker); err != nil {
+				continue
+			}
+			// Only include high-engagement segments
+			if marker.Intensity >= MinHeatmapScore {
+				markers = append(markers, marker)
+			}
+		}
 	}
 
+	if len(markers) == 0 {
+		logger.Debug("No high-engagement markers found (score >= %.2f)", MinHeatmapScore)
+		return nil, fmt.Errorf("no high-engagement segments found")
+	}
+
+	// Sort by intensity (highest first)
+	sort.Slice(markers, func(i, j int) bool {
+		return markers[i].Intensity > markers[j].Intensity
+	})
+
+	logger.Info("Found %d high-engagement segments", len(markers))
 	return markers, nil
 }
 
@@ -78,53 +112,31 @@ func FindBestSegment(markers []HeatmapMarker, maxDuration float64) *Segment {
 		return nil
 	}
 
-	// Convert to segments with scores
-	type scoredPoint struct {
-		timeSec float64
-		score   float64
+	// Markers are already sorted by intensity (highest first)
+	// Take the highest scoring marker
+	best := markers[0]
+	startSec := float64(best.StartMillis) / 1000.0
+	durationSec := float64(best.DurationMS) / 1000.0
+
+	// Use the marker's own duration or maxDuration, whichever is smaller
+	if durationSec > maxDuration {
+		durationSec = maxDuration
 	}
 
-	points := make([]scoredPoint, len(markers))
-	for i, m := range markers {
-		points[i] = scoredPoint{
-			timeSec: float64(m.StartMillis) / 1000.0,
-			score:   m.Intensity,
-		}
-	}
-
-	// Sort by time
-	sort.Slice(points, func(i, j int) bool {
-		return points[i].timeSec < points[j].timeSec
-	})
-
-	// Sliding window to find best 60-second segment
-	bestStart := 0.0
-	bestScore := 0.0
-
-	for i := range points {
-		startTime := points[i].timeSec
-		endTime := startTime + maxDuration
-		windowScore := 0.0
-
-		for j := i; j < len(points) && points[j].timeSec < endTime; j++ {
-			windowScore += points[j].score
-		}
-
-		if windowScore > bestScore {
-			bestScore = windowScore
-			bestStart = startTime
-		}
-	}
-
-	// Add 5s padding before if possible
-	paddedStart := bestStart - 5
+	// Add padding (5s before, 5s after)
+	const padding = 5.0
+	paddedStart := startSec - padding
 	if paddedStart < 0 {
 		paddedStart = 0
 	}
 
+	endSec := startSec + durationSec + padding
+
+	logger.Info("Best segment: start=%.0fs, score=%.2f", startSec, best.Intensity)
+
 	return &Segment{
 		StartSec: paddedStart,
-		EndSec:   paddedStart + maxDuration + 10, // 5s padding each side
-		Score:    bestScore,
+		EndSec:   endSec,
+		Score:    best.Intensity,
 	}
 }

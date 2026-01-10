@@ -1,41 +1,52 @@
 package main
 
 import (
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
+
 	"telegram-auto-clip/internal/bot"
+	"telegram-auto-clip/internal/config"
+	"telegram-auto-clip/internal/logger"
 
 	"github.com/joho/godotenv"
 )
 
 func main() {
 	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using environment variables")
+		logger.Info("No .env file found, using environment variables")
 	}
+
+	cfg, _ := config.Load("config.json")
 
 	telegramToken := os.Getenv("TELEGRAM_BOT_TOKEN")
 	geminiKey := os.Getenv("GEMINI_API_KEY")
 
 	if telegramToken == "" {
-		log.Fatal("TELEGRAM_BOT_TOKEN is required")
+		logger.Error("TELEGRAM_BOT_TOKEN is required")
+		os.Exit(1)
 	}
 	if geminiKey == "" {
-		log.Fatal("GEMINI_API_KEY is required")
+		logger.Error("GEMINI_API_KEY is required")
+		os.Exit(1)
 	}
 
-	b, err := bot.New(telegramToken, geminiKey, "tmp")
+	logger.Info("Token loaded: %s...", telegramToken[:20])
+	logger.Info("Creating bot...")
+
+	b, err := bot.New(telegramToken, geminiKey, cfg)
 	if err != nil {
-		log.Fatalf("Failed to create bot: %v", err)
+		logger.Error("Failed to create bot: %v", err)
+		os.Exit(1)
 	}
 
-	// Graceful shutdown
+	logger.Info("Bot created successfully")
+
 	go func() {
 		sigCh := make(chan os.Signal, 1)
 		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
 		<-sigCh
-		log.Println("Shutting down...")
+		logger.Info("Shutting down...")
 		b.Stop()
 		os.Exit(0)
 	}()
