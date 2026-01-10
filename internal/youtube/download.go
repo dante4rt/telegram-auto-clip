@@ -62,22 +62,31 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 
 		if err := cmd.Run(); err != nil {
 			stderrStr := stderr.String()
+			method := "direct"
+			if proxyURL != "" {
+				method = "proxy"
+			}
 			if strings.Contains(stderrStr, "Sign in") || strings.Contains(stderrStr, "bot") {
+				logger.Debug("Auth failed (%s), trying next...", method)
 				lastErr = fmt.Errorf("auth required")
 				continue
 			}
-			logger.Error("yt-dlp stderr: %s", stderrStr)
+			logger.Error("yt-dlp error (%s): %s", method, stderrStr)
 			lastErr = fmt.Errorf("download failed: %w", err)
 			continue
 		}
 
 		// Log the format that was downloaded
+		method := "direct"
+		if proxyURL != "" {
+			method = "proxy"
+		}
 		infoFile := outputPath + ".info"
 		if data, err := os.ReadFile(infoFile); err == nil {
-			logger.Info("Download completed: %s", strings.TrimSpace(string(data)))
+			logger.Info("Download completed (%s): %s", method, strings.TrimSpace(string(data)))
 			os.Remove(infoFile)
 		} else {
-			logger.Info("Download completed")
+			logger.Info("Download completed (%s)", method)
 		}
 		return outputPath, nil
 	}

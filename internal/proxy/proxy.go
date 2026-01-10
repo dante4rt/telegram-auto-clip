@@ -41,16 +41,22 @@ func GetRandom() string {
 }
 
 // GetShuffled returns all proxies in random order for retry
+// Empty string first = try direct connection before proxies
 func GetShuffled() []string {
+	// Always try direct connection first (better quality)
+	result := []string{""}
+
 	if len(proxies) == 0 {
-		return []string{""}
+		return result
 	}
+
+	// Then add shuffled proxies as fallback
 	shuffled := make([]string, len(proxies))
 	copy(shuffled, proxies)
 	rand.Shuffle(len(shuffled), func(i, j int) {
 		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
 	})
-	return shuffled
+	return append(result, shuffled...)
 }
 
 func Count() int {
