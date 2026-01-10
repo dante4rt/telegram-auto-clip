@@ -24,7 +24,6 @@ func FetchMetadata(url string, cookiesFile string, proxies []string) (*VideoMeta
 			"--dump-json",
 			"--skip-download",
 			"--no-warnings",
-			"--extractor-args", "youtube:player_client=ios,web,android",
 		}
 		if proxyURL != "" {
 			args = append(args, "--proxy", proxyURL)
