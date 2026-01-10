@@ -86,7 +86,9 @@ Clip duration is dynamic (15-60 sec) based on content!`
 }
 
 func (b *Bot) handleClip(c tele.Context) error {
-	logger.Info("Received /clip from user %d", c.Sender().ID)
+	userID := c.Sender().ID
+	chat := c.Chat()
+	logger.Info("Received /clip from user %d", userID)
 
 	args := strings.TrimSpace(c.Message().Payload)
 	if args == "" {
@@ -94,40 +96,42 @@ func (b *Bot) handleClip(c tele.Context) error {
 	}
 
 	url := strings.Fields(args)[0]
-	logger.Info("Processing URL: %s", url)
+	logger.Info("Processing URL: %s for user %d", url, userID)
 
 	if !youtube.IsValidYouTubeURL(url) {
 		return c.Send("Hmm, that doesn't look like a valid YouTube URL. Please try again!")
 	}
 
 	// Initial status
-	statusMsg, err := b.bot.Send(c.Chat(), "Got it! Processing your video...")
+	statusMsg, err := b.bot.Send(chat, "Got it! Processing your video...")
 	if err != nil {
 		logger.Error("Failed to send status: %v", err)
 		return err
 	}
 
-	// Update status message (edit the same message)
-	updateStatus := func(status string) {
-		logger.Info("Status: %s", status)
-		_, err := b.bot.Edit(statusMsg, status)
-		if err != nil {
-			logger.Debug("Edit failed: %v", err)
+	// Process in goroutine to handle concurrent requests
+	go func() {
+		// Update status message (edit the same message)
+		updateStatus := func(status string) {
+			logger.Info("[User %d] Status: %s", userID, status)
+			_, err := b.bot.Edit(statusMsg, status)
+			if err != nil {
+				logger.Debug("Edit failed: %v", err)
+			}
 		}
-	}
 
-	result, err := b.clipper.Process(url, updateStatus)
-	if err != nil {
-		logger.Error("Processing failed: %v", err)
-		b.bot.Edit(statusMsg, fmt.Sprintf("Oops! Error: %v\n\nPlease try again later!", err))
-		return nil
-	}
-	defer b.clipper.Cleanup(result)
+		result, err := b.clipper.Process(url, updateStatus)
+		if err != nil {
+			logger.Error("[User %d] Processing failed: %v", userID, err)
+			b.bot.Edit(statusMsg, fmt.Sprintf("Oops! Error: %v\n\nPlease try again later!", err))
+			return
+		}
+		defer b.clipper.Cleanup(result)
 
-	logger.Info("Clip ready: %s", result.VideoPath)
-	b.bot.Edit(statusMsg, "Clip ready! Uploading...")
+		logger.Info("[User %d] Clip ready: %s", userID, result.VideoPath)
+		b.bot.Edit(statusMsg, "Clip ready! Uploading...")
 
-	caption := fmt.Sprintf(`%s
+		caption := fmt.Sprintf(`%s
 
 %s
 
@@ -136,27 +140,29 @@ Title: %s
 Duration: %s
 Platform: %s
 Channel: %s`,
-		result.Caption,
-		result.Hashtags,
-		result.Title,
-		result.Duration,
-		result.Platform,
-		result.Channel,
-	)
+			result.Caption,
+			result.Hashtags,
+			result.Title,
+			result.Duration,
+			result.Platform,
+			result.Channel,
+		)
 
-	video := &tele.Video{
-		File:    tele.FromDisk(result.VideoPath),
-		Caption: truncate(caption, 1024),
-	}
+		video := &tele.Video{
+			File:    tele.FromDisk(result.VideoPath),
+			Caption: truncate(caption, 1024),
+		}
 
-	if err := c.Send(video); err != nil {
-		logger.Error("Failed to send video: %v", err)
-		b.bot.Edit(statusMsg, fmt.Sprintf("Upload failed: %v\n\nFile might be too large, please try again!", err))
-		return nil
-	}
+		if _, err := b.bot.Send(chat, video); err != nil {
+			logger.Error("[User %d] Failed to send video: %v", userID, err)
+			b.bot.Edit(statusMsg, fmt.Sprintf("Upload failed: %v\n\nFile might be too large, please try again!", err))
+			return
+		}
 
-	b.bot.Delete(statusMsg)
-	logger.Info("Video sent successfully to user %d", c.Sender().ID)
+		b.bot.Delete(statusMsg)
+		logger.Info("[User %d] Video sent successfully", userID)
+	}()
+
 	return nil
 }
 

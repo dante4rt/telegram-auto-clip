@@ -49,7 +49,33 @@ sudo apt install ffmpeg && pip install yt-dlp
    GEMINI_API_KEY=your_key          # Get from aistudio.google.com/apikey
    ```
 
-3. Run
+3. Configure (optional)
+
+   Edit `config.json`:
+
+   ```json
+   {
+     "poll_timeout_sec": 10,
+     "max_clip_duration_sec": 60,
+     "output_dir": "tmp",
+     "min_heatmap_score": 0.15,
+     "max_ai_video_duration_sec": 1200,
+     "fallback_clip_duration_sec": 45,
+     "fallback_start_percent": 0.2
+   }
+   ```
+
+   | Option | Description | Default |
+   | -------- | ------------- | --------- |
+   | `poll_timeout_sec` | Telegram polling interval | 10 |
+   | `max_clip_duration_sec` | Maximum clip length | 60 |
+   | `output_dir` | Temp files directory | tmp |
+   | `min_heatmap_score` | Minimum engagement score (0-1) | 0.15 |
+   | `max_ai_video_duration_sec` | Max video length for AI analysis | 1200 (20 min) |
+   | `fallback_clip_duration_sec` | Clip length when no best segment found | 45 |
+   | `fallback_start_percent` | Start position for long video fallback | 0.2 (20%) |
+
+4. Run
 
    ```bash
    go run main.go

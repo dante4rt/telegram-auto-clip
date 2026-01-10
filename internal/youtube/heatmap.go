@@ -24,9 +24,7 @@ type Segment struct {
 	Score    float64
 }
 
-const MinHeatmapScore = 0.40 // Minimum intensity to be considered viral
-
-func FetchHeatmap(videoID string) ([]HeatmapMarker, error) {
+func FetchHeatmap(videoID string, minScore float64) ([]HeatmapMarker, error) {
 	url := fmt.Sprintf("https://www.youtube.com/watch?v=%s", videoID)
 
 	client := &http.Client{}
@@ -50,10 +48,10 @@ func FetchHeatmap(videoID string) ([]HeatmapMarker, error) {
 	}
 
 	logger.Debug("Fetched YouTube page, size: %d bytes", len(body))
-	return parseHeatmapFromHTML(string(body))
+	return parseHeatmapFromHTML(string(body), minScore)
 }
 
-func parseHeatmapFromHTML(html string) ([]HeatmapMarker, error) {
+func parseHeatmapFromHTML(html string, minScore float64) ([]HeatmapMarker, error) {
 	// Match the pattern from reference: "markers":[...],"markersMetadata"
 	// Use (?s) for DOTALL mode in Go regex
 	re := regexp.MustCompile(`(?s)"markers":\s*(\[.*?\])\s*,\s*"?markersMetadata"?`)
@@ -78,7 +76,7 @@ func parseHeatmapFromHTML(html string) ([]HeatmapMarker, error) {
 
 	logger.Debug("Parsed %d raw markers", len(rawMarkers))
 
-	var markers []HeatmapMarker
+	var allMarkers []HeatmapMarker
 	for _, rm := range rawMarkers {
 		// Check if it has heatMarkerRenderer
 		if renderer, ok := rm["heatMarkerRenderer"]; ok {
@@ -86,24 +84,39 @@ func parseHeatmapFromHTML(html string) ([]HeatmapMarker, error) {
 			if err := json.Unmarshal(renderer, &marker); err != nil {
 				continue
 			}
-			// Only include high-engagement segments
-			if marker.Intensity >= MinHeatmapScore {
-				markers = append(markers, marker)
-			}
+			allMarkers = append(allMarkers, marker)
 		}
 	}
 
-	if len(markers) == 0 {
-		logger.Debug("No high-engagement markers found (score >= %.2f)", MinHeatmapScore)
-		return nil, fmt.Errorf("no high-engagement segments found")
+	if len(allMarkers) == 0 {
+		logger.Debug("No heatmap markers found")
+		return nil, fmt.Errorf("no heatmap data found")
 	}
 
 	// Sort by intensity (highest first)
-	sort.Slice(markers, func(i, j int) bool {
-		return markers[i].Intensity > markers[j].Intensity
+	sort.Slice(allMarkers, func(i, j int) bool {
+		return allMarkers[i].Intensity > allMarkers[j].Intensity
 	})
 
-	logger.Info("Found %d high-engagement segments", len(markers))
+	// Filter by minimum score, but always return at least top 5
+	var markers []HeatmapMarker
+	for _, m := range allMarkers {
+		if m.Intensity >= minScore {
+			markers = append(markers, m)
+		}
+	}
+
+	// If no markers pass threshold, take top 5 anyway
+	if len(markers) == 0 {
+		maxTake := 5
+		if len(allMarkers) < maxTake {
+			maxTake = len(allMarkers)
+		}
+		markers = allMarkers[:maxTake]
+		logger.Debug("No markers above threshold, using top %d (best score: %.2f)", len(markers), markers[0].Intensity)
+	}
+
+	logger.Info("Found %d engagement segments (best: %.2f)", len(markers), markers[0].Intensity)
 	return markers, nil
 }
 

@@ -85,7 +85,7 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 	} else {
 		// Strategy 1: Try heatmap first (fastest if available)
 		onStatus("Analyzing engagement data...")
-		markers, heatmapErr := youtube.FetchHeatmap(videoID)
+		markers, heatmapErr := youtube.FetchHeatmap(videoID, c.cfg.MinHeatmapScore)
 		if heatmapErr != nil {
 			logger.Debug("Heatmap fetch failed: %v", heatmapErr)
 		}
@@ -101,7 +101,8 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 		}
 
 		// Strategy 2: Use Gemini to watch the video and find best moment
-		if startSec == 0 && clipDurationSec == 0 {
+		// Only for videos within AI duration limit (longer videos exceed Gemini token limit)
+		if startSec == 0 && clipDurationSec == 0 && meta.Duration <= float64(c.cfg.MaxAIVideoDurationSec) {
 			onStatus("AI is watching the video to find best moment...")
 			suggestion, err := c.gemini.AnalyzeYouTubeVideo(url, meta.Title, meta.Duration, maxDur)
 			if err == nil && suggestion != nil {
@@ -115,14 +116,22 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 					logger.Error("AI video analysis failed: %v", err)
 				}
 			}
+		} else if startSec == 0 && clipDurationSec == 0 {
+			logger.Debug("Video too long for AI analysis (%.0f min), skipping", meta.Duration/60)
 		}
 
-		// Strategy 3: Fallback to first 30 seconds
+		// Strategy 3: Fallback - pick from middle of video (more interesting than intro)
 		if startSec == 0 && clipDurationSec == 0 {
-			startSec = 0
-			clipDurationSec = 30
-			clipReason = "Video intro"
-			onStatus("Using first 30 seconds...")
+			clipDurationSec = float64(c.cfg.FallbackClipDuration)
+			if meta.Duration > 300 { // > 5 min: start from configured percentage into video
+				startSec = meta.Duration * c.cfg.FallbackStartPercent
+				clipReason = "Early highlight"
+				onStatus(fmt.Sprintf("Using segment from %s...", youtube.FormatDuration(startSec)))
+			} else {
+				startSec = 0
+				clipReason = "Video intro"
+				onStatus(fmt.Sprintf("Using first %d seconds...", c.cfg.FallbackClipDuration))
+			}
 		}
 	}
 

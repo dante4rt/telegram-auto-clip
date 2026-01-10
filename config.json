@@ -1,5 +1,9 @@
 {
   "poll_timeout_sec": 10,
   "max_clip_duration_sec": 60,
-  "output_dir": "tmp"
+  "output_dir": "tmp",
+  "min_heatmap_score": 0.15,
+  "max_ai_video_duration_sec": 1200,
+  "fallback_clip_duration_sec": 45,
+  "fallback_start_percent": 0.2
 }
