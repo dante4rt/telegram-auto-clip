@@ -45,6 +45,7 @@ echo 'export PATH="$HOME/.deno/bin:$PATH"' >> ~/.bashrc && source ~/.bashrc
    ```text
    TELEGRAM_BOT_TOKEN=your_token    # From @BotFather
    GEMINI_API_KEY=your_key          # From aistudio.google.com/apikey
+   PROXY_LIST=ip:port:user:pass,ip:port:user:pass   # Optional, for servers
    ```
 
 3. **Run**
@@ -72,12 +73,10 @@ Edit `config.json` to customize (all optional):
 | `fallback_start_percent`     | Start position for fallback          | 0.2     |
 | `cookies_file`               | Path to cookies.txt for YouTube auth | ""      |
 
-**For servers/VPS** getting "Sign in to confirm you're not a bot" errors:
+**For servers/VPS** getting "Sign in to confirm you're not a bot" errors, use proxies (recommended) or cookies:
 
-1. Install "Get cookies.txt LOCALLY" (Chrome) or "cookies.txt" (Firefox)
-2. Go to youtube.com while logged in
-3. Export cookies → Save as `cookies.txt`
-4. Set `"cookies_file": "cookies.txt"` in config.json
+- **Proxies**: Add `PROXY_LIST` in `.env` with residential proxies (comma-separated, format: `ip:port:user:pass`)
+- **Cookies**: Export from browser using "Get cookies.txt LOCALLY" extension, set `cookies_file` in config.json
 
 ## Contributing
 
