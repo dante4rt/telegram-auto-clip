@@ -18,42 +18,42 @@ type VideoMetadata struct {
 }
 
 func FetchMetadata(url string, cookiesFile string, proxies []string) (*VideoMetadata, error) {
-	clients := []string{"web", "ios", "android"}
-
 	var lastErr error
 	for _, proxyURL := range proxies {
-		for _, client := range clients {
-			args := []string{"--dump-json", "--skip-download", "--no-warnings"}
-			if proxyURL != "" {
-				args = append(args, "--proxy", proxyURL)
-			}
-			args = append(args, "--extractor-args", "youtube:player_client="+client)
-			if cookiesFile != "" {
-				args = append(args, "--cookies", cookiesFile)
-			}
-			args = append(args, url)
+		args := []string{
+			"--dump-json",
+			"--skip-download",
+			"--no-warnings",
+			"--extractor-args", "youtube:player_client=ios,web,android",
+		}
+		if proxyURL != "" {
+			args = append(args, "--proxy", proxyURL)
+		}
+		if cookiesFile != "" {
+			args = append(args, "--cookies", cookiesFile)
+		}
+		args = append(args, url)
 
-			cmd := exec.Command("yt-dlp", args...)
-			output, err := cmd.Output()
-			if err == nil {
-				var meta VideoMetadata
-				if err := json.Unmarshal(output, &meta); err != nil {
-					lastErr = fmt.Errorf("failed to parse metadata: %w", err)
-					continue
-				}
-				return &meta, nil
+		cmd := exec.Command("yt-dlp", args...)
+		output, err := cmd.Output()
+		if err == nil {
+			var meta VideoMetadata
+			if err := json.Unmarshal(output, &meta); err != nil {
+				lastErr = fmt.Errorf("failed to parse metadata: %w", err)
+				continue
 			}
+			return &meta, nil
+		}
 
-			if exitErr, ok := err.(*exec.ExitError); ok {
-				stderr := string(exitErr.Stderr)
-				if strings.Contains(stderr, "Sign in") || strings.Contains(stderr, "bot") {
-					lastErr = fmt.Errorf("auth required")
-					continue
-				}
-				lastErr = fmt.Errorf("yt-dlp failed: %s", stderr)
-			} else {
-				lastErr = fmt.Errorf("yt-dlp failed: %w", err)
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			stderr := string(exitErr.Stderr)
+			if strings.Contains(stderr, "Sign in") || strings.Contains(stderr, "bot") {
+				lastErr = fmt.Errorf("auth required")
+				continue
 			}
+			lastErr = fmt.Errorf("yt-dlp failed: %s", stderr)
+		} else {
+			lastErr = fmt.Errorf("yt-dlp failed: %w", err)
 		}
 	}
 
