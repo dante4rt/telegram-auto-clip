@@ -42,11 +42,19 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 		baseArgs = append(baseArgs, "--download-sections", section)
 	}
 
-	// Try multiple strategies
+	// Try multiple strategies (ios and tv_embedded often work best)
 	strategies := []struct {
 		name string
 		args []string
 	}{
+		{
+			name: "ios",
+			args: append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=ios"),
+		},
+		{
+			name: "tv_embedded",
+			args: append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=tv_embedded"),
+		},
 		{
 			name: "cookies",
 			args: func() []string {
@@ -65,6 +73,10 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 		{
 			name: "mweb",
 			args: append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=mweb"),
+		},
+		{
+			name: "web_creator",
+			args: append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=web_creator"),
 		},
 	}
 
