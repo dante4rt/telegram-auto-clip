@@ -32,8 +32,10 @@ func New(token, geminiKey string, cfg *config.Config) (*Bot, error) {
 		return nil, fmt.Errorf("failed to create bot: %w", err)
 	}
 
-	// Drop pending updates from before restart
-	_, _ = b.Raw("deleteWebhook", map[string]bool{"drop_pending_updates": true})
+	// Clear pending updates and wait for Telegram to reset connection
+	b.Raw("deleteWebhook", map[string]bool{"drop_pending_updates": true})
+	b.Raw("getUpdates", map[string]int{"offset": -1, "timeout": 0})
+	time.Sleep(time.Second)
 
 	clip, err := clipper.New(geminiKey, cfg)
 	if err != nil {
