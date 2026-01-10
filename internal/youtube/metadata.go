@@ -17,92 +17,43 @@ type VideoMetadata struct {
 	URL         string  `json:"webpage_url"`
 }
 
-func FetchMetadata(url string, cookiesFile string, proxyURL string) (*VideoMetadata, error) {
-	// Base args that all strategies share
-	baseArgs := []string{"--dump-json", "--skip-download", "--no-warnings"}
-	if proxyURL != "" {
-		baseArgs = append(baseArgs, "--proxy", proxyURL)
-	}
-
-	// Try multiple strategies in order
-	strategies := []struct {
-		name string
-		args []string
-	}{
-		{
-			name: "ios_cookies",
-			args: func() []string {
-				args := append([]string{}, baseArgs...)
-				args = append(args, "--extractor-args", "youtube:player_client=ios")
-				if cookiesFile != "" {
-					args = append(args, "--cookies", cookiesFile)
-				}
-				return args
-			}(),
-		},
-		{
-			name: "tv_cookies",
-			args: func() []string {
-				args := append([]string{}, baseArgs...)
-				args = append(args, "--extractor-args", "youtube:player_client=tv_embedded")
-				if cookiesFile != "" {
-					args = append(args, "--cookies", cookiesFile)
-				}
-				return args
-			}(),
-		},
-		{
-			name: "android_cookies",
-			args: func() []string {
-				args := append([]string{}, baseArgs...)
-				args = append(args, "--extractor-args", "youtube:player_client=android")
-				if cookiesFile != "" {
-					args = append(args, "--cookies", cookiesFile)
-				}
-				return args
-			}(),
-		},
-		{
-			name: "ios",
-			args: append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=ios"),
-		},
-		{
-			name: "cookies",
-			args: func() []string {
-				args := append([]string{}, baseArgs...)
-				if cookiesFile != "" {
-					args = append(args, "--cookies", cookiesFile)
-				}
-				return args
-			}(),
-		},
-	}
+func FetchMetadata(url string, cookiesFile string, proxies []string) (*VideoMetadata, error) {
+	clients := []string{"ios", "tv_embedded", "android"}
 
 	var lastErr error
-	for _, strategy := range strategies {
-		args := append(strategy.args, url)
-		cmd := exec.Command("yt-dlp", args...)
-
-		output, err := cmd.Output()
-		if err == nil {
-			var meta VideoMetadata
-			if err := json.Unmarshal(output, &meta); err != nil {
-				lastErr = fmt.Errorf("failed to parse metadata: %w", err)
-				continue
+	for _, proxyURL := range proxies {
+		for _, client := range clients {
+			args := []string{"--dump-json", "--skip-download", "--no-warnings"}
+			if proxyURL != "" {
+				args = append(args, "--proxy", proxyURL)
 			}
-			return &meta, nil
-		}
-
-		// Check if it's an auth error, try next strategy
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			stderr := string(exitErr.Stderr)
-			if strings.Contains(stderr, "Sign in") || strings.Contains(stderr, "bot") {
-				lastErr = fmt.Errorf("strategy %s failed: auth required", strategy.name)
-				continue
+			args = append(args, "--extractor-args", "youtube:player_client="+client)
+			if cookiesFile != "" {
+				args = append(args, "--cookies", cookiesFile)
 			}
-			lastErr = fmt.Errorf("yt-dlp failed: %s", stderr)
-		} else {
-			lastErr = fmt.Errorf("yt-dlp failed: %w", err)
+			args = append(args, url)
+
+			cmd := exec.Command("yt-dlp", args...)
+			output, err := cmd.Output()
+			if err == nil {
+				var meta VideoMetadata
+				if err := json.Unmarshal(output, &meta); err != nil {
+					lastErr = fmt.Errorf("failed to parse metadata: %w", err)
+					continue
+				}
+				return &meta, nil
+			}
+
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				stderr := string(exitErr.Stderr)
+				if strings.Contains(stderr, "Sign in") || strings.Contains(stderr, "bot") {
+					lastErr = fmt.Errorf("auth required")
+					continue
+				}
+				lastErr = fmt.Errorf("yt-dlp failed: %s", stderr)
+			} else {
+				lastErr = fmt.Errorf("yt-dlp failed: %w", err)
+			}
 		}
 	}
 

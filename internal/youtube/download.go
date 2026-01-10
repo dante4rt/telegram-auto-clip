@@ -18,7 +18,7 @@ type DownloadOptions struct {
 	EndSec      float64
 	OutputFile  string
 	CookiesFile string
-	ProxyURL    string
+	Proxies     []string
 }
 
 func DownloadSegment(opts DownloadOptions) (string, error) {
@@ -27,105 +27,53 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 	}
 
 	outputPath := filepath.Join(opts.OutputDir, opts.OutputFile)
-
-	// Base args for all strategies
-	baseArgs := []string{
-		"-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
-		"--merge-output-format", "mp4",
-		"-o", outputPath,
-		"--no-warnings",
-		"--no-playlist",
-	}
-	if opts.ProxyURL != "" {
-		baseArgs = append(baseArgs, "--proxy", opts.ProxyURL)
-	}
-
-	// Add time range if specified
-	if opts.StartSec > 0 || opts.EndSec > 0 {
-		section := fmt.Sprintf("*%.0f-%.0f", opts.StartSec, opts.EndSec)
-		baseArgs = append(baseArgs, "--download-sections", section)
-	}
-
-	// Try multiple strategies (ios+cookies is often the winning combo)
-	strategies := []struct {
-		name string
-		args []string
-	}{
-		{
-			name: "ios_cookies",
-			args: func() []string {
-				args := append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=ios")
-				if opts.CookiesFile != "" {
-					args = append(args, "--cookies", opts.CookiesFile)
-				}
-				return args
-			}(),
-		},
-		{
-			name: "tv_cookies",
-			args: func() []string {
-				args := append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=tv_embedded")
-				if opts.CookiesFile != "" {
-					args = append(args, "--cookies", opts.CookiesFile)
-				}
-				return args
-			}(),
-		},
-		{
-			name: "android_cookies",
-			args: func() []string {
-				args := append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=android")
-				if opts.CookiesFile != "" {
-					args = append(args, "--cookies", opts.CookiesFile)
-				}
-				return args
-			}(),
-		},
-		{
-			name: "ios",
-			args: append(append([]string{}, baseArgs...), "--extractor-args", "youtube:player_client=ios"),
-		},
-		{
-			name: "cookies",
-			args: func() []string {
-				args := make([]string, len(baseArgs))
-				copy(args, baseArgs)
-				if opts.CookiesFile != "" {
-					args = append(args, "--cookies", opts.CookiesFile)
-				}
-				return args
-			}(),
-		},
-	}
+	clients := []string{"ios", "tv_embedded", "android"}
 
 	logger.Info("Downloading video segment: %.0f-%.0f seconds", opts.StartSec, opts.EndSec)
 
 	var lastErr error
-	for _, strategy := range strategies {
-		// Remove old output file if exists from previous attempt
-		os.Remove(outputPath)
+	for _, proxyURL := range opts.Proxies {
+		for _, client := range clients {
+			os.Remove(outputPath)
 
-		args := append(strategy.args, opts.URL)
-		logger.Debug("Trying strategy: %s", strategy.name)
+			args := []string{
+				"-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+				"--merge-output-format", "mp4",
+				"-o", outputPath,
+				"--no-warnings",
+				"--no-playlist",
+			}
+			if proxyURL != "" {
+				args = append(args, "--proxy", proxyURL)
+			}
+			if opts.StartSec > 0 || opts.EndSec > 0 {
+				section := fmt.Sprintf("*%.0f-%.0f", opts.StartSec, opts.EndSec)
+				args = append(args, "--download-sections", section)
+			}
+			args = append(args, "--extractor-args", "youtube:player_client="+client)
+			if opts.CookiesFile != "" {
+				args = append(args, "--cookies", opts.CookiesFile)
+			}
+			args = append(args, opts.URL)
 
-		cmd := exec.Command("yt-dlp", args...)
-		var stderr bytes.Buffer
-		cmd.Stderr = &stderr
+			cmd := exec.Command("yt-dlp", args...)
+			var stderr bytes.Buffer
+			cmd.Stderr = &stderr
 
-		if err := cmd.Run(); err != nil {
-			stderrStr := stderr.String()
-			if strings.Contains(stderrStr, "Sign in") || strings.Contains(stderrStr, "bot") {
-				logger.Debug("Strategy %s failed: auth required, trying next...", strategy.name)
-				lastErr = fmt.Errorf("auth required")
+			if err := cmd.Run(); err != nil {
+				stderrStr := stderr.String()
+				if strings.Contains(stderrStr, "Sign in") || strings.Contains(stderrStr, "bot") {
+					lastErr = fmt.Errorf("auth required")
+					continue
+				}
+				logger.Error("yt-dlp stderr: %s", stderrStr)
+				lastErr = fmt.Errorf("download failed: %w", err)
 				continue
 			}
-			logger.Error("yt-dlp stderr: %s", stderrStr)
-			lastErr = fmt.Errorf("download failed: %w", err)
-			continue
-		}
 
-		logger.Info("Download completed with strategy: %s", strategy.name)
-		return outputPath, nil
+			logger.Info("Download completed with proxy+client: %s", client)
+			return outputPath, nil
+		}
 	}
 
 	return "", lastErr

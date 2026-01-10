@@ -58,7 +58,7 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 	outDir := c.cfg.OutputDir
 
 	onStatus("Fetching video info...")
-	meta, err := youtube.FetchMetadata(url, c.cfg.CookiesFile, proxy.GetRandom())
+	meta, err := youtube.FetchMetadata(url, c.cfg.CookiesFile, proxy.GetShuffled())
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch metadata: %w", err)
 	}
@@ -151,7 +151,7 @@ func (c *Clipper) Process(url string, onStatus StatusCallback) (*ClipResult, err
 		EndSec:      endSec,
 		OutputFile:  rawFile,
 		CookiesFile: c.cfg.CookiesFile,
-		ProxyURL:    proxy.GetRandom(),
+		Proxies:     proxy.GetShuffled(),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("download failed: %w", err)

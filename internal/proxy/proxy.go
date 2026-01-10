@@ -40,6 +40,19 @@ func GetRandom() string {
 	return proxies[rand.Intn(len(proxies))]
 }
 
+// GetShuffled returns all proxies in random order for retry
+func GetShuffled() []string {
+	if len(proxies) == 0 {
+		return []string{""}
+	}
+	shuffled := make([]string, len(proxies))
+	copy(shuffled, proxies)
+	rand.Shuffle(len(shuffled), func(i, j int) {
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	})
+	return shuffled
+}
+
 func Count() int {
 	return len(proxies)
 }
