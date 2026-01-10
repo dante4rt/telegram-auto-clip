@@ -1,0 +1,14 @@
+# General ignores
+.env
+tmp/
+*.mp4
+*.webm
+*.mkv
+*.srt
+*.vtt
+
+# Claude files
+.claude
+
+# Binary files
+telegram-auto-clip
