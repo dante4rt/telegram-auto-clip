@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"google.golang.org/genai"
 
@@ -42,6 +43,26 @@ func NewGeminiClient(apiKey string) (*GeminiClient, error) {
 
 func (g *GeminiClient) Close() {
 	// New SDK doesn't require explicit close
+}
+
+func (g *GeminiClient) generateWithRetry(ctx context.Context, model string, contents []*genai.Content, config *genai.GenerateContentConfig) (*genai.GenerateContentResponse, error) {
+	maxRetries := 2
+	for i := 0; i <= maxRetries; i++ {
+		result, err := g.client.Models.GenerateContent(ctx, model, contents, config)
+		if err == nil {
+			return result, nil
+		}
+		if !strings.Contains(err.Error(), "429") && !strings.Contains(err.Error(), "RESOURCE_EXHAUSTED") {
+			return nil, err
+		}
+		if i == maxRetries {
+			return nil, err
+		}
+		wait := 30 * time.Second
+		logger.Info("Gemini rate limited, retrying in %v... (%d/%d)", wait, i+1, maxRetries)
+		time.Sleep(wait)
+	}
+	return nil, fmt.Errorf("unreachable")
 }
 
 // AnalyzeYouTubeVideo uses Gemini to directly analyze a YouTube video and find the best segment
@@ -87,7 +108,7 @@ Penting: Start time harus antara 0 dan %.0f detik.`,
 	}
 
 	logger.Info("Asking Gemini to analyze YouTube video...")
-	result, err := g.client.Models.GenerateContent(ctx, "gemini-2.5-flash", contents, config)
+	result, err := g.generateWithRetry(ctx, "gemini-2.5-flash", contents, config)
 	if err != nil {
 		return nil, fmt.Errorf("gemini video analysis failed: %w", err)
 	}
@@ -133,7 +154,7 @@ HASHTAGS: #hashtag1 #hashtag2 #hashtag3 #hashtag4 #hashtag5`, title, channel, re
 		TopP:        genai.Ptr(float32(0.95)),
 	}
 
-	result, err := g.client.Models.GenerateContent(ctx, "gemini-2.5-flash", contents, config)
+	result, err := g.generateWithRetry(ctx, "gemini-2.5-flash", contents, config)
 	if err != nil {
 		return nil, fmt.Errorf("gemini caption generation failed: %w", err)
 	}
