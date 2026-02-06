@@ -35,10 +35,12 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 		os.Remove(outputPath)
 
 		args := []string{
-			"-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]/best",
+			"-f", "bv*+ba/b",
+			"--format-sort", "height:1080",
 			"--merge-output-format", "mp4",
 			"-o", outputPath,
 			"--no-playlist",
+			"--extractor-args", "youtube:player_client=mweb,default",
 			"--print-to-file", "%(height)sp", outputPath + ".info",
 		}
 		if proxyURL != "" {
