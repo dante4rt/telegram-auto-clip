@@ -40,7 +40,7 @@ func DownloadSegment(opts DownloadOptions) (string, error) {
 			"--merge-output-format", "mp4",
 			"-o", outputPath,
 			"--no-playlist",
-			"--extractor-args", "youtube:player_client=mweb,default",
+			"--extractor-args", "youtube:player_client=tv,default",
 			"--print-to-file", "%(height)sp", outputPath + ".info",
 		}
 		if proxyURL != "" {
