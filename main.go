@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 
 	"telegram-auto-clip/internal/bot"
@@ -40,7 +41,12 @@ func main() {
 	logger.Info("Token loaded: %s...", telegramToken[:20])
 	logger.Info("Creating bot...")
 
-	b, err := bot.New(telegramToken, geminiKey, cfg)
+	adminID, _ := strconv.ParseInt(os.Getenv("ADMIN_USER_ID"), 10, 64)
+	if adminID != 0 {
+		logger.Info("Admin user: %d", adminID)
+	}
+
+	b, err := bot.New(telegramToken, geminiKey, cfg, adminID)
 	if err != nil {
 		logger.Error("Failed to create bot: %v", err)
 		os.Exit(1)

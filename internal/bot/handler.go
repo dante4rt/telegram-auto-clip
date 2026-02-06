@@ -2,6 +2,8 @@ package bot
 
 import (
 	"fmt"
+	"io"
+	"os"
 	"strings"
 	"time"
 
@@ -16,9 +18,11 @@ import (
 type Bot struct {
 	bot     *tele.Bot
 	clipper *clipper.Clipper
+	cfg     *config.Config
+	adminID int64
 }
 
-func New(token, geminiKey string, cfg *config.Config) (*Bot, error) {
+func New(token, geminiKey string, cfg *config.Config, adminID int64) (*Bot, error) {
 	pref := tele.Settings{
 		Token: token,
 		Poller: &tele.LongPoller{
@@ -47,6 +51,8 @@ func New(token, geminiKey string, cfg *config.Config) (*Bot, error) {
 	return &Bot{
 		bot:     b,
 		clipper: clip,
+		cfg:     cfg,
+		adminID: adminID,
 	}, nil
 }
 
@@ -54,6 +60,9 @@ func (b *Bot) Start() {
 	b.bot.Handle("/start", b.handleStart)
 	b.bot.Handle("/help", b.handleHelp)
 	b.bot.Handle("/clip", b.handleClip)
+
+	// Handle file uploads (cookies.txt via Telegram)
+	b.bot.Handle(tele.OnDocument, b.handleDocument)
 
 	// Handle plain text YouTube URLs (without /clip command)
 	b.bot.Handle(tele.OnText, b.handleText)
@@ -110,6 +119,37 @@ What I do:
 
 Clip duration is dynamic (15-60 sec) based on content!`
 	return c.Send(help)
+}
+
+func (b *Bot) handleDocument(c tele.Context) error {
+	if b.adminID == 0 || c.Sender().ID != b.adminID {
+		return nil
+	}
+
+	doc := c.Message().Document
+	if doc == nil || !strings.HasSuffix(doc.FileName, ".txt") {
+		return nil
+	}
+
+	reader, err := b.bot.File(&doc.File)
+	if err != nil {
+		return c.Send(fmt.Sprintf("Failed to download file: %v", err))
+	}
+	defer reader.Close()
+
+	data, err := io.ReadAll(reader)
+	if err != nil {
+		return c.Send(fmt.Sprintf("Failed to read file: %v", err))
+	}
+
+	cookiesPath := "cookies.txt"
+	if err := os.WriteFile(cookiesPath, data, 0644); err != nil {
+		return c.Send(fmt.Sprintf("Failed to save cookies: %v", err))
+	}
+
+	b.cfg.CookiesFile = cookiesPath
+	logger.Info("Cookies updated by user %d (%s, %d bytes)", c.Sender().ID, doc.FileName, len(data))
+	return c.Send(fmt.Sprintf("Cookies updated! (%d bytes)\nWill use for next requests.", len(data)))
 }
 
 func (b *Bot) handleClip(c tele.Context) error {
